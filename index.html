@@ -171,7 +171,7 @@ var clients=[
    plan:'Pure Living',size:'medium',rate:284,vents:12,extraVents:2,
    hvac:'Lennox',units:'2',f1:'16x20x1',f1q:1,f2:'20x20x1',f2q:1,
    diff:'200ml',ds1:'JLM-001',ds2:'JLM-002',scent:'Provence',
-   status:'Active',start:'2026-05-15',next:'2026-06-15',time:'09:00',
+   status:'Active',start:'2026-05-15',next:'2026-05-18',time:'09:00',
    day:'Monday',access:'',pets:'',notes:'Test client',first:true}
 ];
 var logs=[];
@@ -1099,9 +1099,14 @@ function buildCalendar(yearOverride, monthOverride, selectedDate){
       if(rd){rd.value=dt;}
       buildRoute(dt);
       // Highlight selected day
-      el.querySelectorAll('.cal-day').forEach(function(d){d.style.outline='none';});
-      this.style.outline='3px solid var(--tl)';
+      el.querySelectorAll('.cal-day').forEach(function(d){d.style.outline='none';d.style.outlineOffset='0';});
+      this.style.outline='3px solid var(--gd)';
       this.style.outlineOffset='2px';
+      // Scroll to route content
+      setTimeout(function(){
+        var rc=document.getElementById('route-content');
+        if(rc)rc.scrollIntoView({behavior:'smooth',block:'start'});
+      },300);
     });
   });
   // Highlight today by default
@@ -1126,11 +1131,8 @@ function buildRoute(dv){
       if(c)list.push(c);
     }
   });
-  // Fallback if no specific visits that day
-  if(!list.length){
-    var dow=dateObj.toLocaleDateString('en-US',{weekday:'long'});
-    list=clients.filter(function(c){return c.status==='Active'&&c.day===dow;});
-  }
+  // Fallback if no specific visits that day - show empty message
+  // (don't fall back to all clients - show only scheduled for that date)
   list.sort(function(a,b){return (a.time||'09:00').localeCompare(b.time||'09:00');});
   if(!list.length){el.innerHTML='<div class="es"><div class="ei">🗺️</div><h3>No visits for '+dayName+'</h3></div>';return;}
   var merv10=0,merv11=0,merv13=0,sc2=[],needB=false;
