@@ -152,7 +152,15 @@ var SCENTS=[{n:'Heiress',col:'Timeless Elegance',sea:'Year Round',notes:'Iris, W
 var INV=[{cat:'diffuser',n:'Diffuser 200ml',stock:10,min:5,cost:45.40},{cat:'diffuser',n:'Diffuser 800ml',stock:4,min:2,cost:116.89},{cat:'sensor',n:'Air Sensor',stock:20,min:5,cost:14.35},{cat:'fragrance',n:'HH Fragrance 500ml',stock:2,min:3,cost:105},{cat:'fragrance',n:'HH Fragrance 5L',stock:0,min:1,cost:900},{cat:'filter',n:'Filter MERV 10',stock:20,min:10,cost:3.13},{cat:'filter',n:'Filter MERV 11',stock:20,min:10,cost:3.93},{cat:'filter',n:'Filter MERV 13',stock:10,min:5,cost:5.90},{cat:'chemical',n:'Benefect Decon 30',stock:1,min:1,cost:36.04}];
 
 // ── STATE ─────────────────────────────────────────────────────────────────
-var clients=[];
+var clients=[
+  {id:'PL-001',name:'ILDA GOMEZ',phone:'661-523-8532',email:'',
+   addr:'1617 WAKE DR, WAKE FOREST, NC 27587',sqft:2200,year:2015,
+   plan:'Pure Living',size:'medium',rate:284,vents:12,extraVents:2,
+   hvac:'Lennox',units:'2',f1:'16x20x1',f1q:1,f2:'20x20x1',f2q:1,
+   diff:'200ml',ds1:'JLM-001',ds2:'JLM-002',scent:'Provence',
+   status:'Active',start:'2026-05-15',next:'2026-06-15',time:'09:00',
+   day:'Monday',access:'',pets:'',notes:'Test client',first:true}
+];
 var logs=[];
 var currentExtras=[];
 var currentSvcId=null;
