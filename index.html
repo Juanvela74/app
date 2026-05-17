@@ -146,8 +146,11 @@ var PRICES={
   'Construction 11-30':{small:250,medium:250,large:250},
   'Construction 31-50+':{small:220,medium:220,large:220},
   'Casa Piloto':{small:149,medium:149,large:149},
-  'Real Estate':{small:199,medium:199,large:199}
+  'Real Estate':{small:49,medium:49,large:49}
 };
+// Special first-visit prices for B2B
+var B2B_SETUP={'Real Estate':199,'Casa Piloto':0,'Construction 1-10':0,'Construction 11-30':0,'Construction 31-50+':0};
+var B2B_EXTRA_VENT={'Real Estate':15,'Casa Piloto':20,'Construction 1-10':0,'Construction 11-30':0,'Construction 31-50+':0};
 var INC_V={'Fresh Home':10,'Pure Living':10,'Luxury Air':15};
 var EV_T={'Fresh Home':2,'Pure Living':3,'Luxury Air':2};
 var EV_M={'Fresh Home':'month 1 & month 7','Pure Living':'month 1, month 5 & month 9','Luxury Air':'month 1 & month 6'};
@@ -623,13 +626,13 @@ function calcPrice(){
     '</span><span style="font-weight:600">$'+base+(isConstruction?'/home':'/mo')+'</span></div>';
 
   if(isConstruction){
-    rows+='<div style="background:#EAF3DE;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#3B6D11">✅ Volume discount applied · Includes: deep duct clean + disinfection + post-construction dust removal</div>';
+    rows+='<div style="background:#EAF3DE;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#3B6D11">✅ Per home · Deep clean + disinfection + post-construction dust removal · No setup fee · No diffuser</div>';
   }
   if(isCasaPiloto){
-    rows+='<div style="background:#EAF3DE;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#3B6D11">✅ Monthly: fragrance refill + filter + report · Min 3 months · Diffuser removed when sold</div>';
+    rows+='<div style="background:#EAF3DE;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#3B6D11">✅ $149/mo · Monthly: fragrance + filter + report · Min 3 months · No setup fee · Diffuser removed when all units sold</div>';
   }
   if(isRealEstate){
-    rows+='<div style="background:#EAF3DE;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#3B6D11">✅ $199 first visit · $49/mo maintenance · Agent earns 10% commission on referrals · Diffuser on showing days only</div>';
+    rows+='<div style="background:#EAF3DE;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#3B6D11">✅ First visit: $199 installation · Monthly: $49 maintenance · Extra vents: $15 each · Agent 10% commission on referrals · Diffuser active on showing days only</div>';
   }
   if(sec>0)rows+='<div class="pr"><span>2nd HVAC (+50%)</span><span style="font-weight:600">+$'+sec+'/mo</span></div>';
   if(ef>0)rows+='<div class="pr"><span>Extra filters: '+ef+'×$'+fp+'</span><span style="font-weight:600;color:var(--tl)">+$'+efc+'/cleaning</span></div>';
@@ -867,7 +870,8 @@ function saveSvc(){
   var date=document.getElementById('sv-d')?document.getElementById('sv-d').value:'';
   var isFirst=!logs.find(function(l){return l.clientId===cid;});
   var sameDay=c.start===date;
-  var setup=(isFirst||sameDay)?175:0;
+  var b2bSetupFee=typeof B2B_SETUP!=='undefined'&&B2B_SETUP[c.plan]!==undefined?B2B_SETUP[c.plan]:175;
+  var setup=(isFirst||sameDay)?b2bSetupFee:0;
   var extTotal=currentExtras.reduce(function(s,e){return s+e.p;},0);
   var total=c.rate+extTotal+setup;
   var g=function(id){var el=document.getElementById(id);return el?el.value:'';};
@@ -910,13 +914,17 @@ function openReceiptModal(id){
   var rnum='PPC-'+Date.now().toString().slice(-6);
   var incV=INC_V[c.plan]||10;
   var ev=Math.max(0,(c.vents||0)-incV);
-  var evc=ev*25;
+  var evPrice=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;
+  var evc=ev*evPrice;
   var ft=FT[c.plan]||'MERV 11';
   var allLogs=logs.filter(function(l){return l.clientId===id;});
   var lastLog=allLogs.length>0?allLogs[0]:null;
   var isFirst=allLogs.length===0;
   var isSecond=allLogs.length===1;
-  var setup=lastLog&&lastLog.setup>0?lastLog.setup:(isFirst?175:0);
+  // B2B plans have different setup fees
+  var b2bSetup=typeof B2B_SETUP!=='undefined'&&B2B_SETUP[c.plan]!==undefined?B2B_SETUP[c.plan]:175;
+  var defaultSetup=isFirst?b2bSetup:0;
+  var setup=lastLog&&lastLog.setup>0?lastLog.setup:defaultSetup;
   var showEVPending=isFirst&&ev>0;
   // Extra vents charged based on plan schedule
   var evTimes=EV_T[c.plan]||1;
@@ -931,7 +939,15 @@ function openReceiptModal(id){
   var ef2=Math.max(0,tf2-includedF);
   var efc2=ef2*fp2;
   var grand=c.rate+evTotal+setup+extTotal+efc2;
-  var rows='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">Monthly Service — '+c.plan+'<br><span style="font-size:11px;color:#888">Duct cleaning + scent + '+ft+' filters · '+incV+' vents included</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+c.rate+'</td></tr>';
+  var isRE=c.plan==='Real Estate';
+  var isCP=c.plan==='Casa Piloto';
+  var isCB=c.plan&&c.plan.includes('Construction');
+  var svcDesc=isRE?'Installation + showing day service · diffuser active on showing days':
+              isCP?'Monthly pilot home service · fragrance + filter + report':
+              isCB?'Post-construction deep clean + disinfection + dust removal':
+              'Duct cleaning + scent + '+ft+' filters · '+incV+' vents included';
+  var svcLabel=isRE?'Real Estate Service':(isCB?'Construction Cleaning':('Monthly Service — '+c.plan));
+  var rows='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">'+svcLabel+'<br><span style="font-size:11px;color:#888">'+svcDesc+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+c.rate+'</td></tr>';
   if(setup>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:var(--lt)"><td style="padding:10px 12px;font-size:13px">Setup fee — diffuser + air sensor<br><span style="font-size:11px;color:var(--md)">One-time · first visit only</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--dk)">$175</td></tr>';
   if(showEVPending)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#F5FFF5"><td style="padding:10px 12px;font-size:13px">Extra vents ('+ev+'×$25 = $'+evc+')<br><span style="font-size:11px;color:var(--ok)">⚡ Will be charged on next visit (month 2)</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--ok)">Pending</td></tr>';
   if(showEVCharged)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#FFFBF0"><td style="padding:10px 12px;font-size:13px">Extra vents ('+ev+'×$25)<br><span style="font-size:11px;color:var(--gd)">Scheduled: '+EV_M[c.plan]+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--gd)">$'+evc+'</td></tr>';
