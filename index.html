@@ -142,11 +142,11 @@ var PRICES={
   'Pure Living':{small:149,medium:189,large:235},
   'Luxury Air':{small:169,medium:199,large:245},
   'One-Time':{small:350,medium:500,large:750},
-  'Construction 1-10':{small:280,medium:280,large:280},
-  'Construction 11-30':{small:250,medium:250,large:250},
-  'Construction 31-50+':{small:220,medium:220,large:220},
+  'Construction 1-10':{small:250,medium:280,large:350},
+  'Construction 11-30':{small:220,medium:250,large:320},
+  'Construction 31-50+':{small:190,medium:220,large:290},
   'Casa Piloto':{small:149,medium:149,large:149},
-  'Real Estate':{small:49,medium:49,large:49}
+  'Real Estate':{small:149,medium:199,large:249}
 };
 // Special first-visit prices for B2B
 var B2B_SETUP={'Real Estate':199,'Casa Piloto':0,'Construction 1-10':0,'Construction 11-30':0,'Construction 31-50+':0};
@@ -598,7 +598,8 @@ function calcPrice(){
   var base=PRICES[plan.value]?PRICES[plan.value][size.value]||0:0;
   var incV=INC_V[plan.value]||10;
   var ev=Math.max(0,(parseInt(vents?vents.value:0)||0)-incV);
-  var evc=ev*25;
+  var evUnitPrice=isRealEstate?15:isConstruction?15:25;
+  var evc=ev*evUnitPrice;
   var evt=EV_T[plan.value]||1;
   var sec=units&&units.value==='2'?Math.round(base*0.5):0;
   var monthly=base+sec;
@@ -624,6 +625,8 @@ function calcPrice(){
      isRealEstate?'Installation + monthly maintenance':
      'Base — '+plan.value+' ('+size.value+')')+
     '</span><span style="font-weight:600">$'+base+(isConstruction?'/home':'/mo')+'</span></div>';
+  // No setup fee for B2B
+  var showSetupFee = !isB2B;
 
   if(isConstruction){
     rows+='<div style="background:#EAF3DE;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#3B6D11">✅ Per home · Deep clean + disinfection + post-construction dust removal · No setup fee · No diffuser</div>';
@@ -638,7 +641,9 @@ function calcPrice(){
   if(ef>0)rows+='<div class="pr"><span>Extra filters: '+ef+'×$'+fp+'</span><span style="font-weight:600;color:var(--tl)">+$'+efc+'/cleaning</span></div>';
   var prEl=document.getElementById('price-rows');if(prEl)prEl.innerHTML=rows;
   var moEl=document.getElementById('p-mo');if(moEl)moEl.textContent='$'+monthly;
-  var fiEl=document.getElementById('p-first');if(fiEl)fiEl.textContent='$'+(monthly+175);
+  var setupAmt=showSetupFee?175:0;
+  var fiEl=document.getElementById('p-first');if(fiEl)fiEl.textContent='$'+(monthly+setupAmt);
+  var setupEl=document.getElementById('p-setup');if(setupEl){setupEl.textContent=showSetupFee?'$175':'$0 (included)';setupEl.style.color=showSetupFee?'':'var(--ok)';}
   var anEl=document.getElementById('p-annual');if(anEl)anEl.textContent='$'+annual.toLocaleString()+'/year';
   var evNote=document.getElementById('p-ev-note');
   if(evNote){if(ev>0){evNote.textContent='⚡ Extra vents $'+evc+' charged on month 2';evNote.style.display='block';}else{evNote.style.display='none';}}
@@ -905,6 +910,7 @@ function saveSvc(){
   document.getElementById('mo-svc').classList.remove('on');
   toast('✅ Visit saved!');
   if(currentPage==='servicelog')renderPage();
+  if(currentPage==='route'){buildCalendar();buildRoute(document.getElementById('route-date')?document.getElementById('route-date').value:new Date().toISOString().split('T')[0]);}
 }
 
 // ── RECEIPT ───────────────────────────────────────────────────────────────
@@ -1010,17 +1016,121 @@ function buildInventory(){
 // ── ROUTE ─────────────────────────────────────────────────────────────────
 function renderRoutePage(el){
   var today=new Date().toISOString().split('T')[0];
-  el.innerHTML='<div class="ph"><div><h1>🗺️ Route & Kit</h1><p>Daily schedule</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="date" id="route-date" class="fs" value="'+today+'"><button class="btn bt" id="btn-route-view">View Route</button></div></div><div id="route-content"></div>';
+  el.innerHTML='<div class="ph"><div><h1>🗺️ Route & Kit</h1><p>Daily schedule</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="date" id="route-date" class="fs" value="'+today+'"><button class="btn bt" id="btn-route-view">View Route</button></div></div>'
+    +'<div id="route-calendar" style="margin-bottom:1.5rem"></div>'
+    +'<div id="route-content"></div>';
+  buildCalendar();
   buildRoute(today);
+}
+
+function buildCalendarForDate(dateStr){
+  // Build calendar for the month of the given date, highlighting that date
+  var d=new Date(dateStr+'T12:00:00');
+  buildCalendar(d.getFullYear(), d.getMonth(), dateStr);
+}
+
+function buildCalendar(yearOverride, monthOverride, selectedDate){
+  var el=document.getElementById('route-calendar');if(!el)return;
+  var today=new Date();
+  var todayStr=today.toISOString().split('T')[0];
+  var year=yearOverride!==undefined?yearOverride:today.getFullYear();
+  var month=monthOverride!==undefined?monthOverride:today.getMonth();
+  var selected=selectedDate||todayStr;
+  var firstDay=new Date(year,month,1).getDay();
+  var daysInMonth=new Date(year,month+1,0).getDate();
+  var monthName=new Date(year,month,1).toLocaleString('en',{month:'long',year:'numeric'});
+
+  // Build visit map from client next dates (scheduled)
+  var visitMap={};
+  clients.filter(function(c){return c.status==='Active'&&c.next;}).forEach(function(c){
+    if(!visitMap[c.next])visitMap[c.next]=[];
+    visitMap[c.next].push({name:c.name,id:c.id,type:'scheduled',plan:c.plan});
+  });
+  // Also add completed visits from logs
+  logs.forEach(function(log){
+    if(!visitMap[log.date])visitMap[log.date]=[];
+    // Only add if not already in map
+    var exists=visitMap[log.date].find(function(v){return v.id===log.clientId;});
+    if(!exists)visitMap[log.date].push({name:log.clientName,id:log.clientId,type:'completed',plan:log.plan});
+  });
+
+  var html='<div class="card"><div class="ct">📅 '+monthName+' — Visit Calendar</div>';
+  html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:8px">';
+  ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(function(d){
+    html+='<div style="text-align:center;font-size:11px;font-weight:600;color:#888;padding:4px">'+d+'</div>';
+  });
+  html+='</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px" id="cal-grid">';
+
+  for(var i=0;i<firstDay;i++){html+='<div style="min-height:52px"></div>';}
+
+  for(var d=1;d<=daysInMonth;d++){
+    var ds=year+'-'+String(month+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    var visits=visitMap[ds]||[];
+    var count=visits.length;
+    var isToday=ds===todayStr;
+    var isSelected=ds===selected&&ds!==todayStr;
+    var isSun=new Date(ds+'T12:00:00').getDay()===0;
+    var bg=count===0?(isSun?'#f5f5f5':'#fff'):count===1?'#E8F5F3':count===2?'#FDF3E0':'#FCEBEB';
+    var bdr=isToday?'3px solid var(--tl)':isSelected?'3px solid var(--gd)':'1px solid #f0f0f0';
+    var names=visits.slice(0,2).map(function(v){
+      var color=v.type==='completed'?'#3B6D11':'#555';
+      var prefix=v.type==='completed'?'✓ ':'';
+      return '<div style="font-size:9px;color:'+color+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+prefix+v.name.split(' ')[0]+'</div>';
+    }).join('');
+    html+='<div class="cal-day" data-date="'+ds+'" style="min-height:52px;border-radius:8px;padding:4px 6px;background:'+bg+';border:'+bdr+';cursor:'+(count>0?'pointer':'default')+'">'
+      +'<div style="font-size:12px;font-weight:'+(isToday?'700':'400')+';color:'+(isToday?'var(--tl)':'var(--dk)')+'">'+d+'</div>'
+      +(count>0?'<div style="font-size:10px;font-weight:600;color:'+(count>=3?'var(--er)':count===2?'#854F0B':'var(--tl)')+'">'+count+'/3</div>'+names:'')
+      +'</div>';
+  }
+  html+='</div>';
+  html+='<div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap;font-size:11px">'
+    +'<div style="display:flex;align-items:center;gap:4px"><div style="width:12px;height:12px;border-radius:3px;background:#E8F5F3;border:1px solid #ccc"></div>1 visit</div>'
+    +'<div style="display:flex;align-items:center;gap:4px"><div style="width:12px;height:12px;border-radius:3px;background:#FDF3E0;border:1px solid #ccc"></div>2 visits</div>'
+    +'<div style="display:flex;align-items:center;gap:4px"><div style="width:12px;height:12px;border-radius:3px;background:#FCEBEB;border:1px solid #ccc"></div>3 (full)</div>'
+    +'<div style="color:#888">Click a day to view route</div>'
+    +'</div></div>';
+  el.innerHTML=html;
+
+  // Add click events after render
+  el.querySelectorAll('.cal-day[data-date]').forEach(function(div){
+    div.addEventListener('click',function(){
+      var dt=this.getAttribute('data-date');
+      var rd=document.getElementById('route-date');
+      if(rd){rd.value=dt;}
+      buildRoute(dt);
+      // Highlight selected day
+      el.querySelectorAll('.cal-day').forEach(function(d){d.style.outline='none';});
+      this.style.outline='3px solid var(--tl)';
+      this.style.outlineOffset='2px';
+    });
+  });
+  // Highlight today by default
+  // Highlight selected date
+  var selDiv=el.querySelector('.cal-day[data-date="'+selected+'"]');
+  if(selDiv){selDiv.style.outline='3px solid var(--gd)';selDiv.style.outlineOffset='2px';}
+  var todayDiv=el.querySelector('.cal-day[data-date="'+todayStr+'"]');
+  if(todayDiv&&selected!==todayStr){todayDiv.style.outline='3px solid var(--tl)';todayDiv.style.outlineOffset='2px';}
 }
 
 function buildRoute(dv){
   var el=document.getElementById('route-content');if(!el)return;
   var dateObj=new Date(dv+'T12:00:00');
   var dayName=dateObj.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-  var dow=dateObj.toLocaleDateString('en-US',{weekday:'long'});
-  var list=clients.filter(function(c){return c.status==='Active'&&c.day===dow;});
-  if(!list.length)list=clients.filter(function(c){return c.status==='Active';});
+  // Get clients scheduled for this specific date
+  var list=clients.filter(function(c){return c.status==='Active'&&c.next===dv;});
+  // Also include clients with a log on this date
+  logs.filter(function(l){return l.date===dv;}).forEach(function(log){
+    var alreadyIn=list.find(function(c){return c.id===log.clientId;});
+    if(!alreadyIn){
+      var c=clients.find(function(x){return x.id===log.clientId;});
+      if(c)list.push(c);
+    }
+  });
+  // Fallback if no specific visits that day
+  if(!list.length){
+    var dow=dateObj.toLocaleDateString('en-US',{weekday:'long'});
+    list=clients.filter(function(c){return c.status==='Active'&&c.day===dow;});
+  }
   list.sort(function(a,b){return (a.time||'09:00').localeCompare(b.time||'09:00');});
   if(!list.length){el.innerHTML='<div class="es"><div class="ei">🗺️</div><h3>No visits for '+dayName+'</h3></div>';return;}
   var merv10=0,merv11=0,merv13=0,sc2=[],needB=false;
@@ -1138,8 +1248,8 @@ function attachPageEvents(){
   // Route
   var brd=document.getElementById('route-date');
   var brv=document.getElementById('btn-route-view');
-  if(brv)brv.addEventListener('click',function(){if(brd)buildRoute(brd.value);});
-  if(brd)brd.addEventListener('change',function(){buildRoute(this.value);});
+  if(brv)brv.addEventListener('click',function(){if(brd){buildCalendarForDate(brd.value);buildRoute(brd.value);}});
+  if(brd)brd.addEventListener('change',function(){buildCalendarForDate(this.value);buildRoute(this.value);});
   // Portal
   var ps=document.getElementById('portal-select');
   if(ps)ps.addEventListener('change',function(){
