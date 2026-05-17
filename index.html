@@ -228,6 +228,7 @@ function renderDashHTML(){
     +'<div style="background:#FDF3E0;border-radius:8px;padding:12px;border-left:3px solid var(--gd)"><div style="font-size:13px;font-weight:600;color:#7A5C00">📦 Inventory</div><div style="font-size:12px;color:#a07c2a;margin-top:3px">Fragrance 500ml — 2 bottles. Reorder from Hotel & Home.</div></div>'
     +'<div style="background:var(--tll);border-radius:8px;padding:12px;border-left:3px solid var(--tl)"><div style="font-size:13px;font-weight:600;color:var(--tl)">🎯 Break-even Goal</div><div style="font-size:12px;color:#155f55;margin-top:3px">'+(need>0?'Need '+need+' more clients for break-even.':'🎉 Break-even achieved!')+'</div></div>'
     +'<div style="background:var(--lt);border-radius:8px;padding:12px;border-left:3px solid var(--md)"><div style="font-size:13px;font-weight:600;color:var(--dk)">📧 Follow-ups</div><div style="font-size:12px;color:var(--md);margin-top:3px">Ryan Ricotta (Aramsco) · Lauren Stevens (Hotel & Home)</div></div>'
+  +(checkReminders().length>0?'<div style="background:#FFF0F5;border-radius:8px;padding:12px;border-left:3px solid #E91E8C"><div style="font-size:13px;font-weight:600;color:#9C1B5C">🔔 Visit Reminders — 7 Days</div><div style="font-size:12px;color:#B03070;margin-top:3px">'+checkReminders().map(function(c){return c.name+' ('+c.next+')'}).join(' · ')+'<br><span style="font-weight:600">Contact these clients to confirm their visit!</span></div></div>':'')
     +'</div></div></div>';
 }
 
@@ -277,6 +278,7 @@ function buildClientsTable(data){
     var bEdit=document.createElement('button');bEdit.className='btn bo bs';bEdit.textContent='✏️';
     var bVisit=document.createElement('button');bVisit.className='btn bt bs';bVisit.textContent='🔧 Visit';
     var bReceipt=document.createElement('button');bReceipt.className='btn bg bs';bReceipt.textContent='🧾';
+    var bReschedule=document.createElement('button');bReschedule.className='btn bs';bReschedule.style.cssText='padding:6px 12px;font-size:12px;background:#E8F5F3;color:var(--tl);border:1px solid var(--tl);border-radius:8px;cursor:pointer';bReschedule.textContent='📅 Reschedule';
     var bStatus=document.createElement('button');
     bStatus.className='btn bs';
     bStatus.style.cssText='padding:6px 12px;font-size:12px;background:'+(c.status==='Active'?'#FDF3E0':'#EAF3DE')+';color:'+(c.status==='Active'?'#854F0B':'#3B6D11')+';border:1px solid '+(c.status==='Active'?'#FAC775':'#A3D977')+';border-radius:8px;cursor:pointer';
@@ -286,10 +288,11 @@ function buildClientsTable(data){
       bEdit.addEventListener('click',function(){openEditClient(id);});
       bVisit.addEventListener('click',function(){openSvcModal(id);});
       bReceipt.addEventListener('click',function(){openReceiptModal(id);});
+      bReschedule.addEventListener('click',function(){openRescheduleClient(id);});
       bStatus.addEventListener('click',function(){toggleClientStatus(id);});
       bDel.addEventListener('click',function(){deleteClient(id);});
     })(c.id);
-    div.appendChild(bEdit);div.appendChild(bVisit);div.appendChild(bReceipt);div.appendChild(bStatus);div.appendChild(bDel);
+    div.appendChild(bEdit);div.appendChild(bVisit);div.appendChild(bReceipt);div.appendChild(bReschedule);div.appendChild(bStatus);div.appendChild(bDel);
     actionTd.appendChild(div);tr.appendChild(actionTd);
     tb.appendChild(tr);
   });
@@ -354,7 +357,7 @@ function getClientFormHTML(c){
     +'<div><label>Start Date</label><input type="date" id="f-start" value="'+(c?v('start',today):today)+'"></div>'
     +'<div><label>Next Visit (auto +1mo)</label><input type="date" id="f-next" value="'+(c?v('next',nextStr):nextStr)+'"></div>'
     +'<div><label>Visit Time</label><input type="time" id="f-time" value="'+(c?v('time','09:00'):'09:00')+'"></div>'
-    +'<div><label>Preferred Day</label>'+sel('f-day',['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'],v('day','Monday'))+'</div>'
+    // Preferred day removed - date selection defines the day automatically
     +'</div><div class="st">Notes</div><div class="fg">'
     +'<div><label>Access Code</label><input id="f-access" value="'+v('access','')+'" placeholder="1234"></div>'
     +'<div><label>Pet Info</label><input id="f-pets" value="'+v('pets','')+'" placeholder="Yes - Dog"></div>'
@@ -386,6 +389,84 @@ function clearLicense(){
   if(clearBtn){clearBtn.style.display='none';}
   if(input){input.value='';}
   toast('🗑️ Photo cleared — not saved');
+}
+
+// ── SMART SCHEDULER ─────────────────────────────────────────────────────
+function getZip(addr){
+  if(!addr)return '00000';
+  var m=addr.match(/\d{5}/);
+  return m?m[0]:'00000';
+}
+
+function getVisitsOnDate(dateStr){
+  return clients.filter(function(c){return c.status==='Active'&&c.next===dateStr;});
+}
+
+function smartAssignDate(startDate, clientAddr){
+  var MAX_PER_DAY=3;
+  var d=new Date(startDate+'T12:00:00');
+  var clientZip=getZip(clientAddr);
+  
+  // Try up to 30 days forward to find best slot
+  for(var i=0;i<30;i++){
+    var ds=d.toISOString().split('T')[0];
+    var visitsToday=getVisitsOnDate(ds);
+    
+    if(visitsToday.length<MAX_PER_DAY){
+      // Day has space - check if there are nearby clients (same ZIP)
+      var nearbyCount=visitsToday.filter(function(c){return getZip(c.addr)===clientZip;}).length;
+      
+      // Prefer days with nearby clients, or days with 0 visits
+      if(nearbyCount>0||visitsToday.length===0||i>6){
+        return {date:ds, visits:visitsToday.length, nearby:nearbyCount, full:false};
+      }
+    }
+    d.setDate(d.getDate()+1);
+    // Skip Sundays
+    if(d.getDay()===0)d.setDate(d.getDate()+1);
+  }
+  // Fallback - just use start date
+  return {date:startDate, visits:0, nearby:0, full:false};
+}
+
+function autoAssignNextVisit(clientId){
+  var c=clients.find(function(x){return x.id===clientId;});
+  if(!c)return;
+  // Calculate next visit from last visit or start date
+  var lastLog=logs.find(function(l){return l.clientId===clientId;});
+  var baseDate=lastLog?lastLog.date:c.start;
+  if(!baseDate)return;
+  var base=new Date(baseDate+'T12:00:00');
+  base.setMonth(base.getMonth()+1);
+  var startStr=base.toISOString().split('T')[0];
+  var result=smartAssignDate(startStr,c.addr);
+  var ci=clients.findIndex(function(x){return x.id===clientId;});
+  if(ci>=0){
+    clients[ci].next=result.date;
+    save();
+  }
+  return result;
+}
+
+function openRescheduleClient(id){
+  var c=clients.find(function(x){return x.id===id;});if(!c)return;
+  // Smart find best new date
+  var base=c.next||new Date().toISOString().split('T')[0];
+  var result=smartAssignDate(base,c.addr);
+  var msg='📅 Smart reschedule for '+c.name+'\n\nBest available date: '+result.date;
+  if(result.nearby>0)msg+='\n✅ '+result.nearby+' nearby client(s) already scheduled that day!';
+  msg+='\n('+result.visits+'/3 visits that day)\n\nConfirm this date?';
+  if(confirm(msg)){
+    var ci=clients.findIndex(function(x){return x.id===id;});
+    if(ci>=0){clients[ci].next=result.date;save();buildClientsTable(clients);toast('✅ Rescheduled to '+result.date);}
+  }
+}
+
+function checkReminders(){
+  var today=new Date();
+  var weekAhead=new Date(today);weekAhead.setDate(weekAhead.getDate()+7);
+  var weekStr=weekAhead.toISOString().split('T')[0];
+  return clients.filter(function(c){return c.status==='Active'&&c.next===weekStr;});
 }
 
 function toggleClientStatus(id){
@@ -443,7 +524,21 @@ function attachFormEvents(){
     var el=document.getElementById(fid);
     if(el){el.addEventListener('input',function(){var pos=this.selectionStart;this.value=this.value.toUpperCase();this.setSelectionRange(pos,pos);});}
   });
-  if(plan){plan.addEventListener('change',function(){calcPrice();autoId();});}
+  var ventsEl=document.getElementById('f-vents');
+  var eventsEl=document.getElementById('f-events');
+  function updateVents(){
+    var planV=document.getElementById('f-plan');
+    if(!ventsEl||!eventsEl||!planV)return;
+    var incV=INC_V[planV.value]||10;
+    var total=parseInt(ventsEl.value)||0;
+    var extra=Math.max(0,total-incV);
+    eventsEl.value=extra;
+    eventsEl.style.background=extra>0?'#FDF3E0':'#f9f9f9';
+    eventsEl.style.color=extra>0?'#854F0B':'#666';
+    calcPrice();
+  }
+  if(ventsEl)ventsEl.addEventListener('input',updateVents);
+  if(plan){plan.addEventListener('change',function(){updateVents();autoId();});}
   if(size){size.addEventListener('change',calcPrice);}
   if(vents){vents.addEventListener('input',calcPrice);}
   if(units){units.addEventListener('change',function(){calcPrice();var g=document.getElementById('ds2-group');if(g)g.style.display=this.value==='2'?'block':'none';});}
@@ -524,8 +619,22 @@ function saveClient(){
     if(dupEmail&&!dupPhone){if(!confirm('⚠️ A client with email '+client.email+' already exists ('+dupEmail.name+'). Continue anyway?'))return;}
     if(dupAddr&&!dupPhone&&!dupEmail){if(!confirm('⚠️ A client at this address already exists ('+dupAddr.name+'). Continue anyway?'))return;}
   }
-  if(idx>=0){var orig=clients[idx].first;clients[idx]=client;clients[idx].first=orig;toast('✅ Client updated!');}
-  else{clients.push(client);toast('✅ Client saved!');}
+  if(idx>=0){
+    var orig=clients[idx].first;
+    clients[idx]=client;
+    clients[idx].first=orig;
+    toast('✅ Client updated!');
+  } else {
+    clients.push(client);
+    // Smart assign next visit date
+    var result=smartAssignDate(client.next||client.start, client.addr);
+    var ni=clients.length-1;
+    clients[ni].next=result.date;
+    var msg='✅ Client saved! Next visit assigned: '+result.date;
+    if(result.nearby>0) msg+=' ('+result.nearby+' nearby client'+(result.nearby>1?'s':'')+' same day)';
+    if(result.visits>0) msg+=' — '+result.visits+'/3 visits that day';
+    toast(msg);
+  }
   save();
   document.getElementById('mo-client').classList.remove('on');
   if(currentPage==='clients')renderPage();
@@ -538,27 +647,93 @@ function renderLogPage(el){
   renderLogItems();
 }
 
+function openEditSvcModal(logId){
+  var log=logs.find(function(l){return l.id===logId;});if(!log)return;
+  var c=clients.find(function(x){return x.id===log.clientId;});if(!c)return;
+  var scentOpts=SCENTS.map(function(s){return '<option value="'+s.n+'"'+(s.n===log.clientScent?' selected':'')+'>'+s.em+' '+s.n+'</option>';}).join('');
+  var sel=function(id,opts,cur){return '<select id="'+id+'">'+opts.map(function(o){return '<option'+(o===cur?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';};
+  document.getElementById('ms-body').innerHTML=
+    '<div style="background:var(--lt);border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:13px"><strong>'+c.name+'</strong> · '+c.plan+' · Editing visit from '+log.date+'</div>'
+    +'<div class="fg">'
+    +'<div><label>Date</label><input type="date" id="sv-d" value="'+log.date+'"></div>'
+    +'<div><label>Time</label><input type="time" id="sv-t" value="'+log.time+'"></div>'
+    +'<div><label>Technician</label>'+sel('sv-tech',['Juan Vela','Jose Vela'],log.tech)+'</div>'
+    +'<div><label>Status</label>'+sel('sv-s',['Completed','Pending','Cancelled','Rescheduled'],log.status)+'</div>'
+    +'<div><label>Duration (min)</label><input type="number" id="sv-dur" value="'+(log.dur||'')+'"></div>'
+    +'<div><label>Filters Changed</label>'+sel('sv-f1',['Yes','No'],log.f1)+'</div>'
+    +'<div><label>Scent Refilled</label>'+sel('sv-sc',['Yes','No'],log.scent)+'</div>'
+    +'<div><label>Benefect Applied</label>'+sel('sv-b',['Yes','No'],log.benef)+'</div>'
+    +'<div><label>Diffuser Checked</label>'+sel('sv-dif',['Yes','No'],log.diff)+'</div>'
+    +'<div><label>Rating</label>'+sel('sv-r',['5','4','3','2','1'],String(log.rating))+'</div>'
+    +'<div class="ff"><label>Fragrance Used</label><select id="sv-scent-sel">'+scentOpts+'</select></div>'
+    +'<div class="ff"><label>Notes</label><textarea id="sv-n" rows="2">'+( log.notes||'')+'</textarea></div>'
+    +'</div>';
+  document.getElementById('ms-save').onclick=function(){
+    var li=logs.findIndex(function(l){return l.id===logId;});
+    if(li<0)return;
+    logs[li].date=document.getElementById('sv-d').value;
+    logs[li].time=document.getElementById('sv-t').value;
+    logs[li].tech=document.getElementById('sv-tech').value;
+    logs[li].status=document.getElementById('sv-s').value;
+    logs[li].dur=document.getElementById('sv-dur').value;
+    logs[li].f1=document.getElementById('sv-f1').value;
+    logs[li].scent=document.getElementById('sv-sc').value;
+    logs[li].benef=document.getElementById('sv-b').value;
+    logs[li].diff=document.getElementById('sv-dif').value;
+    logs[li].rating=parseInt(document.getElementById('sv-r').value)||5;
+    logs[li].clientScent=document.getElementById('sv-scent-sel').value;
+    logs[li].notes=document.getElementById('sv-n').value;
+    // Update client scent if changed
+    var ci=clients.findIndex(function(x){return x.id===log.clientId;});
+    if(ci>=0)clients[ci].scent=logs[li].clientScent;
+    save();
+    document.getElementById('mo-svc').classList.remove('on');
+    renderLogItems();
+    toast('✅ Visit updated!');
+  };
+  document.getElementById('mo-svc').classList.add('on');
+}
+
 function renderLogItems(){
   var ll=document.getElementById('log-list');if(!ll)return;
   if(!logs.length){ll.innerHTML='<div class="es"><div class="ei">📋</div><h3>No visits yet</h3></div>';return;}
-  ll.innerHTML=logs.map(function(log){
+  ll.innerHTML='';
+  logs.forEach(function(log,logIdx){
     var d=new Date(log.date+'T12:00:00');
     var stars='⭐'.repeat(log.rating||5);
     var tagColor=log.plan==='Luxury Air'?'var(--gd)':log.plan==='Pure Living'?'var(--tl)':'var(--md)';
     var done=[log.f1==='Yes'?'✅ Filters changed':'',log.scent==='Yes'?'✅ Scent refilled':'',log.benef==='Yes'?'✅ Benefect applied':''].filter(Boolean).concat((log.extras||[]).map(function(e){return '➕ '+e.n+' $'+e.p;}));
-    return '<div style="background:#fff;border-radius:var(--r);padding:1.25rem 1.5rem;margin-bottom:12px;box-shadow:0 2px 8px rgba(31,58,95,.07);display:flex;gap:1.25rem">'
-      +'<div style="background:'+tagColor+';color:#fff;border-radius:8px;padding:10px 12px;text-align:center;min-width:55px;flex-shrink:0">'
+    var div=document.createElement('div');
+    div.style.cssText='background:#fff;border-radius:var(--r);padding:1.25rem 1.5rem;margin-bottom:12px;box-shadow:0 2px 8px rgba(31,58,95,.07);display:flex;gap:1.25rem';
+    div.innerHTML='<div style="background:'+tagColor+';color:#fff;border-radius:8px;padding:10px 12px;text-align:center;min-width:55px;flex-shrink:0">'
       +'<div style="font-size:20px;font-weight:700;line-height:1">'+String(d.getDate()).padStart(2,'0')+'</div>'
       +'<div style="font-size:10px;text-transform:uppercase">'+d.toLocaleString('en',{month:'short'})+'</div></div>'
       +'<div style="flex:1">'
       +'<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
       +'<div><div style="font-size:15px;font-weight:600;color:var(--dk)">'+log.clientName+' — '+log.clientId+'</div>'
-      +'<div style="font-size:12px;color:#888">'+log.plan+' · '+log.time+'</div></div>'
+      +'<div style="font-size:12px;color:#888">'+log.plan+' · '+log.time+' · '+log.tech+'</div></div>'
       +'<div style="text-align:right"><div style="color:var(--gd);font-size:14px">'+stars+'</div>'
       +'<div style="font-size:12px;color:#888">$'+log.total+'</div></div></div>'
-      +'<div style="background:var(--tll);border-radius:8px;padding:8px 12px">'+done.map(function(w){return '<div style="font-size:13px;color:#444;padding:1px 0">'+w+'</div>';}).join('')+'</div>'
-      +'</div></div>';
-  }).join('');
+      +'<div style="background:var(--tll);border-radius:8px;padding:8px 12px;margin-bottom:8px">'+done.map(function(w){return '<div style="font-size:13px;color:#444;padding:1px 0">'+w+'</div>';}).join('')+'</div>'
+      +'<div style="display:flex;gap:6px" id="log-btns-'+log.id+'"></div>'
+      +'</div>';
+    // Add edit and delete buttons
+    var btnDiv=div.querySelector('#log-btns-'+log.id);
+    var bEdit=document.createElement('button');bEdit.className='btn bo bs';bEdit.textContent='✏️ Edit Notes';
+    var bDel=document.createElement('button');bDel.className='btn bs';bDel.style.cssText='padding:6px 12px;font-size:12px;background:#FCEBEB;color:#A32D2D;border:1px solid #f7c1c1;border-radius:8px;cursor:pointer';bDel.textContent='🗑️ Delete';
+    (function(id,idx){
+      bEdit.addEventListener('click',function(){
+        openEditSvcModal(id);
+      });
+      bDel.addEventListener('click',function(){
+        if(!confirm('Delete this visit log? This cannot be undone.'))return;
+        logs=logs.filter(function(l){return l.id!==id;});
+        save();renderLogItems();toast('🗑️ Visit deleted');
+      });
+    })(log.id,logIdx);
+    btnDiv.appendChild(bEdit);btnDiv.appendChild(bDel);
+    ll.appendChild(div);
+  });
 }
 
 function openSvcModal(clientId){
@@ -589,6 +764,7 @@ function openSvcModal(clientId){
     +'<div><label>Benefect Applied</label><select id="sv-b"><option>Yes</option><option>No</option></select></div>'
     +'<div><label>Diffuser Checked</label><select id="sv-dif"><option>Yes</option><option>No</option></select></div>'
     +'<div><label>Rating</label><select id="sv-r"><option value="5">⭐⭐⭐⭐⭐</option><option value="4">⭐⭐⭐⭐</option><option value="3">⭐⭐⭐</option><option value="2">⭐⭐</option><option value="1">⭐</option></select></div>'
+    +'<div class="ff"><label>Fragrance This Visit</label><select id="sv-scent-new">'+(c?SCENTS.map(function(s){return '<option value="'+s.n+'"'+(s.n===c.scent?' selected':'')+'>'+s.em+' '+s.n+'</option>';}).join(''):SCENTS.map(function(s){return '<option>'+s.n+'</option>';}).join(''))+'</select></div>'
     +'<div class="ff"><label>Notes</label><textarea id="sv-n" rows="2" placeholder="Notes..."></textarea></div>'
     +'</div>'
     +'<div style="margin-top:1rem"><div class="st">📷 Photos</div>'
@@ -646,6 +822,8 @@ function saveSvc(){
   var extTotal=currentExtras.reduce(function(s,e){return s+e.p;},0);
   var total=c.rate+extTotal+setup;
   var g=function(id){var el=document.getElementById(id);return el?el.value:'';};
+  var newScent=g('sv-scent-new')||c.scent||'';
+  if(newScent&&newScent!==c.scent){var sci=clients.findIndex(function(x){return x.id===cid;});if(sci>=0)clients[sci].scent=newScent;}
   var log={id:'LOG-'+Date.now(),clientId:cid,clientName:c.name,plan:c.plan,
     date:date,time:g('sv-t'),tech:g('sv-tech'),status:g('sv-s'),
     f1:g('sv-f1'),scent:g('sv-sc'),benef:g('sv-b'),diff:g('sv-dif'),
@@ -655,6 +833,21 @@ function saveSvc(){
   logs.unshift(log);
   var ci=clients.findIndex(function(x){return x.id===cid;});
   if(ci>=0){clients[ci].first=false;var nd=new Date(date+'T12:00:00');nd.setMonth(nd.getMonth()+1);clients[ci].next=nd.toISOString().split('T')[0];}
+  // Auto-deduct inventory
+  if(log.f1==='Yes'){
+    var ft2=FT[c.plan]||'MERV 11';
+    var fIdx=INV.findIndex(function(i){return i.n.includes(ft2);});
+    var fQty=(c.f1q||1)+(c.f2q||0);
+    if(fIdx>=0)INV[fIdx].stock=Math.max(0,INV[fIdx].stock-fQty);
+  }
+  if(log.scent==='Yes'){
+    var sIdx=INV.findIndex(function(i){return i.cat==='fragrance'&&i.n.includes('500ml');});
+    if(sIdx>=0)INV[sIdx].stock=Math.max(0,INV[sIdx].stock-1);
+  }
+  if(log.benef==='Yes'){
+    var bIdx=INV.findIndex(function(i){return i.n.includes('Benefect');});
+    if(bIdx>=0)INV[bIdx].stock=Math.max(0,INV[bIdx].stock-0.1);
+  }
   save();
   document.getElementById('mo-svc').classList.remove('on');
   toast('✅ Visit saved!');
@@ -676,7 +869,9 @@ function openReceiptModal(id){
   var isSecond=allLogs.length===1;
   var setup=lastLog&&lastLog.setup>0?lastLog.setup:(isFirst?175:0);
   var showEVPending=isFirst&&ev>0;
-  var showEVCharged=isSecond&&ev>0;
+  // Extra vents charged based on plan schedule
+  var evTimes=EV_T[c.plan]||1;
+  var showEVCharged=!isFirst&&ev>0&&(isSecond||(allLogs.length%Math.round(12/evTimes)===1));
   var evTotal=showEVCharged?evc:0;
   var extItems=lastLog?lastLog.extras:[];
   var extTotal=extItems.reduce(function(s,e){return s+e.p;},0);
@@ -790,15 +985,13 @@ function buildRoute(dv){
       +(c.access?'<div style="background:var(--lt);border-radius:6px;padding:6px 10px;margin-top:8px;font-size:12px">🔑 Access: <strong>'+c.access+'</strong>'+(c.pets?' · 🐾 '+c.pets:'')+'</div>':'');
     // Route action buttons
     var btns=document.createElement('div');btns.style.cssText='display:flex;gap:8px;margin-top:12px';
-    var bLog=document.createElement('button');bLog.className='btn bt bs';bLog.textContent='📋 Log Visit';
     var bTime=document.createElement('button');bTime.className='btn bo bs';bTime.textContent='🕐 Change Time';
     var bRec=document.createElement('button');bRec.className='btn bg bs';bRec.textContent='🧾 Receipt';
     (function(id,name){
-      bLog.addEventListener('click',function(){openSvcModal(id);});
       bTime.addEventListener('click',function(){var d=prompt('New date (YYYY-MM-DD):',c.next||'');if(d===null)return;var t=prompt('New time (HH:MM):',c.time||'09:00');if(t===null)return;var ci=clients.findIndex(function(x){return x.id===id;});if(ci>=0){clients[ci].next=d;clients[ci].time=t;}save();buildRoute(dv);toast('✅ Updated for '+name);});
       bRec.addEventListener('click',function(){openReceiptModal(id);});
     })(c.id,c.name);
-    btns.appendChild(bLog);btns.appendChild(bTime);btns.appendChild(bRec);div.appendChild(btns);
+    btns.appendChild(bTime);btns.appendChild(bRec);div.appendChild(btns);
     el.appendChild(div);
   });
 }
@@ -826,6 +1019,9 @@ function buildPortal(id){
   +'<div class="card" style="margin-bottom:1.5rem"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tl);margin-bottom:1rem">Your Plan Summary</div>'
   +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;text-align:center"><div><div style="font-size:22px;font-weight:700;color:var(--dk)">1</div><div style="font-size:11px;color:#888">Visit/month</div></div><div><div style="font-size:22px;font-weight:700;color:var(--dk)">2</div><div style="font-size:11px;color:#888">'+ft+' filters</div></div><div><div style="font-size:22px;font-weight:700;color:var(--dk)">'+cl+'×</div><div style="font-size:11px;color:#888">Cleanings/year</div></div></div>'
   +'<div style="border-top:1px solid #f0f0f0;margin-top:12px;padding-top:12px;display:flex;align-items:center;gap:10px;font-size:13px;color:#444"><span style="font-size:20px">🌿</span><span>Current scent: <strong>'+(c.scent||'—')+'</strong></span></div></div>'
+  +'<div class="card" style="margin-bottom:1.5rem"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tl);margin-bottom:1rem">🌿 Our Fragrance Collection</div>'
+  +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px">'+SCENTS.map(function(s){var isCurrent=s.n===c.scent;return '<div style="border-radius:8px;padding:10px;text-align:center;background:'+(isCurrent?'var(--tll)':s.bg)+';border:2px solid '+(isCurrent?'var(--tl)':'transparent')+'">'+'<div style="font-size:24px">'+s.em+'</div><div style="font-size:12px;font-weight:600;color:var(--dk)">'+s.n+'</div><div style="font-size:10px;color:#888">'+s.notes+'</div>'+(isCurrent?'<div style="font-size:10px;font-weight:700;color:var(--tl);margin-top:3px">✓ Current</div>':'')+'</div>';}).join('')
+  +'</div></div>'
   +'<h3 style="font-family:Playfair Display,serif;font-size:18px;color:var(--dk);margin-bottom:1rem">Service History</h3>'
   +(!cLogs.length?'<div class="es" style="background:#fff;border-radius:var(--r)"><div class="ei">📋</div><h3>No visits yet</h3></div>'
   :cLogs.map(function(log){
@@ -836,6 +1032,7 @@ function buildPortal(id){
     return '<div class="pvc" style="border-left:4px solid '+(c.plan==='Luxury Air'?'var(--gd)':c.plan==='Pure Living'?'var(--tl)':'var(--md)')+'"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:700;color:var(--dk)">'+ds+(log.time?' at '+log.time:'')+'</div><div style="color:var(--gd);font-size:15px">'+stars+'</div></div>'
     +'<div style="font-size:12px;color:#888;margin-bottom:10px">👨‍🔧 '+log.tech+' · ⏱️ '+(log.dur||'—')+' min · 💰 $'+log.total+'</div>'
     +'<div style="background:var(--tll);border-radius:8px;padding:10px 12px;margin-bottom:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--tl);margin-bottom:6px">Work Performed</div>'+done.map(function(w){return '<div style="font-size:13px;color:#444;padding:1px 0">'+w+'</div>';}).join('')+'</div>'
+    +'<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#888;margin-bottom:6px">📷 Service Photos</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">'+['Before 1','Before 2','After 1','After 2'].map(function(lbl){return '<div style="aspect-ratio:1;background:var(--gy);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;color:#888;border:1px dashed #ccc"><span style="font-size:18px">📷</span>'+lbl+'</div>';}).join('')+'</div><div style="font-size:10px;color:#888;margin-top:4px;text-align:center">Photos will be available once database is connected</div></div>'
     +'<div style="background:#fff;border:1px solid #f0f0f0;border-radius:8px;padding:10px 14px">'
     +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--dk);margin-bottom:8px">🧾 Receipt Summary</div>'
     +'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Monthly — '+c.plan+'</span><span style="font-weight:600">$'+c.rate+'</span></div>'
