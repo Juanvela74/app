@@ -137,17 +137,27 @@ tr:hover td{background:var(--lt)}
 
 <script>
 // ── CONSTANTS ─────────────────────────────────────────────────────────────
-var PRICES={'Fresh Home':{small:119,medium:169,large:219},'Pure Living':{small:149,medium:189,large:235},'Luxury Air':{small:169,medium:199,large:245},'One-Time':{small:350,medium:500,large:750},'B2B':{small:199,medium:199,large:280},'Real Estate':{small:300,medium:400,large:500}};
+var PRICES={
+  'Fresh Home':{small:119,medium:169,large:219},
+  'Pure Living':{small:149,medium:189,large:235},
+  'Luxury Air':{small:169,medium:199,large:245},
+  'One-Time':{small:350,medium:500,large:750},
+  'Construction 1-10':{small:280,medium:280,large:280},
+  'Construction 11-30':{small:250,medium:250,large:250},
+  'Construction 31-50+':{small:220,medium:220,large:220},
+  'Casa Piloto':{small:149,medium:149,large:149},
+  'Real Estate':{small:199,medium:199,large:199}
+};
 var INC_V={'Fresh Home':10,'Pure Living':10,'Luxury Air':15};
 var EV_T={'Fresh Home':2,'Pure Living':3,'Luxury Air':2};
 var EV_M={'Fresh Home':'month 1 & month 7','Pure Living':'month 1, month 5 & month 9','Luxury Air':'month 1 & month 6'};
 var CLNS={'Fresh Home':2,'Pure Living':3,'Luxury Air':4};
 var FT={'Fresh Home':'MERV 10','Pure Living':'MERV 11','Luxury Air':'MERV 13'};
 var FP={'Fresh Home':25,'Pure Living':35,'Luxury Air':45};
-var PFX={'Fresh Home':'FH','Pure Living':'PL','Luxury Air':'LA','One-Time':'OT','B2B':'PB','Real Estate':'RE'};
+var PFX={'Fresh Home':'FH','Pure Living':'PL','Luxury Air':'LA','One-Time':'OT','Construction 1-10':'CB','Construction 11-30':'CB','Construction 31-50+':'CB','Casa Piloto':'CP','Real Estate':'RE'};
 var PAGES=['dashboard','clients','servicelog','scents','inventory','route','portal'];
 var PAGE_LABELS={'dashboard':'📊 Dashboard','clients':'👥 Clients','servicelog':'📋 Service Log','scents':'🌿 Scents','inventory':'📦 Inventory','route':'🗺️ Route','portal':'👤 Client View'};
-var EXTRAS_MENU=[{n:'Extra filter MERV 10',p:25},{n:'Extra filter MERV 11',p:35},{n:'Extra filter MERV 13',p:45},{n:'Extra vent cleaning',p:25},{n:'Dryer vent cleaning',p:99},{n:'Coil + fan deep clean',p:125},{n:'Sanitización rejillas',p:49},{n:'Mold treatment — Mild',p:149},{n:'Mold treatment — Moderate',p:249},{n:'Mold treatment — Severe',p:399},{n:'Premium inspection',p:79},{n:'Custom charge',p:0,custom:true}];
+var EXTRAS_MENU=[{n:'Extra filter MERV 10',p:25},{n:'Extra filter MERV 11',p:35},{n:'Extra filter MERV 13',p:45},{n:'Return/Handler filter (special size)',p:65},{n:'Extra vent cleaning',p:25},{n:'Dryer vent cleaning',p:99},{n:'Coil + fan deep clean',p:125},{n:'Sanitización rejillas',p:49},{n:'Mold treatment — Mild',p:149},{n:'Mold treatment — Moderate',p:249},{n:'Mold treatment — Severe',p:399},{n:'Premium inspection',p:79},{n:'Custom charge',p:0,custom:true}];
 var SCENTS=[{n:'Heiress',col:'Timeless Elegance',sea:'Year Round',notes:'Iris, White Tea, Rose',int:2,em:'🌸',bg:'#FFF0F5',hotel:'5-star luxury hotel grade',type:'recurring'},{n:'Provence',col:'Revitalizing Serenity',sea:'Spring',notes:'Lavender, Vanilla, Lemon',int:2,em:'💜',bg:'#F5F0FF',hotel:'5-star spa resort grade',type:'recurring'},{n:'Caribbean',col:'Seaside Splendor',sea:'Summer',notes:'Orange, Star Fruit, Ocean',int:3,em:'🌊',bg:'#E8F5FF',hotel:'5-star beachfront resort',type:'recurring'},{n:'Noir',col:'Sophisticated Escapades',sea:'Fall',notes:'Vanilla, Tobacco, Cacao',int:3,em:'🖤',bg:'#F5F0E8',hotel:'5-star boutique hotel',type:'recurring'},{n:'Bellini',col:'Fresh Beginnings',sea:'Spring',notes:'Peach, Jasmine, Vanilla',int:2,em:'🍑',bg:'#FFF5E8',hotel:'5-star luxury resort',type:'recurring'},{n:'Lavender Classic',col:'Seasonal',sea:'Spring',notes:'Pure Lavender',int:2,em:'🌾',bg:'#F5F0FF',hotel:'Luxury spa grade',type:'both'},{n:'Lemon Fresh',col:'Seasonal',sea:'Summer',notes:'Lemon, Citrus',int:3,em:'🍋',bg:'#FFFFF0',hotel:'Luxury hotel grade',type:'both'},{n:'Cinnamon Spice',col:'Seasonal',sea:'Fall',notes:'Cinnamon, Clove, Vanilla',int:3,em:'🍂',bg:'#FFF5E8',hotel:'Luxury resort grade',type:'recurring'},{n:'Clean Cotton',col:'Seasonal',sea:'Winter',notes:'Cotton, Musk, Light Floral',int:1,em:'❄️',bg:'#F0F5FF',hotel:'5-star hotel grade',type:'recurring'},{n:'Coastline',col:'Seaside Splendor',sea:'Summer',notes:'Bergamot, Coconut, Ylang Ylang',int:2,em:'🥥',bg:'#E8FFF5',hotel:'5-star coastal resort',type:'recurring'}];
 var INV=[{cat:'diffuser',n:'Diffuser 200ml',stock:10,min:5,cost:45.40},{cat:'diffuser',n:'Diffuser 800ml',stock:4,min:2,cost:116.89},{cat:'sensor',n:'Air Sensor',stock:20,min:5,cost:14.35},{cat:'fragrance',n:'HH Fragrance 500ml',stock:2,min:3,cost:105},{cat:'fragrance',n:'HH Fragrance 5L',stock:0,min:1,cost:900},{cat:'filter',n:'Filter MERV 10',stock:20,min:10,cost:3.13},{cat:'filter',n:'Filter MERV 11',stock:20,min:10,cost:3.93},{cat:'filter',n:'Filter MERV 13',stock:10,min:5,cost:5.90},{cat:'chemical',n:'Benefect Decon 30',stock:1,min:1,cost:36.04}];
 
@@ -335,7 +345,15 @@ function getClientFormHTML(c){
     +'<div><label>Sq Ft</label><input id="f-sqft" type="number" value="'+v('sqft','')+'" placeholder="2200"></div>'
     +'<div><label>Year Built</label><input id="f-year" type="number" value="'+v('year','')+'" placeholder="2015"></div>'
     +'</div><div class="st">Service Plan</div><div class="fg">'
-    +'<div><label>Plan</label>'+sel('f-plan',['','Fresh Home','Pure Living','Luxury Air','One-Time','B2B','Real Estate'],v('plan',''))+'</div>'
+    +'<div><label>Plan</label>'+sel('f-plan',[
+  '','Fresh Home','Pure Living','Luxury Air',
+  '── RESIDENTIAL ──',
+  'One-Time',
+  '── B2B CONSTRUCTION ──',
+  'Construction 1-10','Construction 11-30','Construction 31-50+',
+  '── B2B OTHER ──',
+  'Casa Piloto','Real Estate'
+],v('plan',''))+'</div>'
     +'<div><label>Home Size</label>'+sel('f-size',['','small','medium','large'],v('size',''))+'</div>'
     +'<div><label>Total Vents</label><input id="f-vents" type="number" value="'+v('vents','')+'" placeholder="15"></div>'
     +'<div><label>Extra Vents (auto)</label><input id="f-events" value="'+v('extraVents','')+'" readonly style="background:#f9f9f9"></div>'
@@ -583,13 +601,36 @@ function calcPrice(){
   var monthly=base+sec;
   var fp=FP[plan.value]||25;
   var tf=(parseInt(f1q?f1q.value:1)||1)+(parseInt(f2q?f2q.value:0)||0);
-  var ef=Math.max(0,tf-2);
+  var hvacUnits=document.getElementById('f-units')?parseInt(document.getElementById('f-units').value)||1:1;
+  var includedFilters=hvacUnits===2?4:2; // 2 per HVAC system included
+  var ef=Math.max(0,tf-includedFilters);
   var efc=ef*fp;
   var cl=CLNS[plan.value]||1;
   var annual=(monthly*12)+(evc*evt)+(efc*cl);
   var evEl=document.getElementById('f-events');if(evEl)evEl.value=ev;
   var rateEl=document.getElementById('f-rate');if(rateEl)rateEl.value=monthly;
-  var rows='<div class="pr"><span>Base — '+plan.value+' ('+size.value+')</span><span style="font-weight:600">$'+base+'/mo</span></div>';
+  // B2B special display
+  var isConstruction=plan.value.includes('Construction');
+  var isCasaPiloto=plan.value==='Casa Piloto';
+  var isRealEstate=plan.value==='Real Estate';
+  var isB2B=isConstruction||isCasaPiloto||isRealEstate;
+
+  var rows='<div class="pr"><span>'+
+    (isConstruction?'Post-construction cleaning per home':
+     isCasaPiloto?'Monthly pilot home service':
+     isRealEstate?'Installation + monthly maintenance':
+     'Base — '+plan.value+' ('+size.value+')')+
+    '</span><span style="font-weight:600">$'+base+(isConstruction?'/home':'/mo')+'</span></div>';
+
+  if(isConstruction){
+    rows+='<div style="background:#EAF3DE;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#3B6D11">✅ Volume discount applied · Includes: deep duct clean + disinfection + post-construction dust removal</div>';
+  }
+  if(isCasaPiloto){
+    rows+='<div style="background:#EAF3DE;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#3B6D11">✅ Monthly: fragrance refill + filter + report · Min 3 months · Diffuser removed when sold</div>';
+  }
+  if(isRealEstate){
+    rows+='<div style="background:#EAF3DE;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#3B6D11">✅ $199 first visit · $49/mo maintenance · Agent earns 10% commission on referrals · Diffuser on showing days only</div>';
+  }
   if(sec>0)rows+='<div class="pr"><span>2nd HVAC (+50%)</span><span style="font-weight:600">+$'+sec+'/mo</span></div>';
   if(ef>0)rows+='<div class="pr"><span>Extra filters: '+ef+'×$'+fp+'</span><span style="font-weight:600;color:var(--tl)">+$'+efc+'/cleaning</span></div>';
   var prEl=document.getElementById('price-rows');if(prEl)prEl.innerHTML=rows;
@@ -886,7 +927,8 @@ function openReceiptModal(id){
   // Extra filters beyond 2 included
   var fp2=FP[c.plan]||35;
   var tf2=(c.f1q||1)+(c.f2q||0);
-  var ef2=Math.max(0,tf2-2);
+  var includedF=c.units==='2'?4:2; // 2 per HVAC system
+  var ef2=Math.max(0,tf2-includedF);
   var efc2=ef2*fp2;
   var grand=c.rate+evTotal+setup+extTotal+efc2;
   var rows='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">Monthly Service — '+c.plan+'<br><span style="font-size:11px;color:#888">Duct cleaning + scent + '+ft+' filters · '+incV+' vents included</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+c.rate+'</td></tr>';
