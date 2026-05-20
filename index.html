@@ -948,6 +948,8 @@ function openReceiptModal(id){
   var allLogs=logs.filter(function(l){return l.clientId===id;});
   var lastLog=allLogs.length>0?allLogs[0]:null;
   var isFirst=allLogs.length===0;
+  // For RE: check if the last log IS the first/oldest visit (same logic as portal)
+  var isFirstVisitLog=isRE&&lastLog&&(allLogs.indexOf(lastLog)===allLogs.length-1);
   var isSecond=allLogs.length===1;
   // For Real Estate: first visit = $199 all-in ($150 setup + $49 monthly), subsequent = $49/mo
   var reInstallPrice=199; // Fixed $199 first visit (all-in)
@@ -971,13 +973,14 @@ function openReceiptModal(id){
   var ef2=Math.max(0,tf2-includedF);
   var efc2=ef2*fp2;
   // Grand total: RE first visit = $199 flat + extras only; RE monthly = $49 + extras only
-  var grandBase=isRE?(isFirst?reInstallPrice:reMonthlyDisplay):c.rate;
+  var reIsFirstVisit=isRE?(isFirst||isFirstVisitLog):false;
+  var grandBase=isRE?(reIsFirstVisit?reInstallPrice:reMonthlyDisplay):c.rate;
   var grand=grandBase+evTotal+(isB2Bplan?0:setup)+extTotal+efc2;
-  var svcLabel2=isRE?(isFirst?'Real Estate — First Visit':'Real Estate — Monthly Maintenance'):
+  var svcLabel2=isRE?(reIsFirstVisit?'Real Estate — First Visit':'Real Estate — Monthly Maintenance'):
                 isCP?'Casa Piloto — Monthly Service':
                 isCB?'Construction — Post-Build Cleaning':'Monthly Service — '+c.plan;
-  var svcAmt=isRE?(isFirst?reInstallPrice:reMonthlyDisplay):c.rate;
-  var svcDesc=isRE?(isFirst?'Includes $'+reSetupFee+' setup + $'+reMonthlyDisplay+'/mo · diffuser installed · showing day service':
+  var svcAmt=isRE?(reIsFirstVisit?reInstallPrice:reMonthlyDisplay):c.rate;
+  var svcDesc=isRE?(reIsFirstVisit?'Includes $'+reSetupFee+' setup + $'+reMonthlyDisplay+'/mo · diffuser installed · showing day service':
                             'Showing day service · diffuser active on showing days'):
               isCP?'Monthly pilot home service · fragrance + filter + report':
               isCB?'Post-construction deep clean + disinfection + dust removal':
