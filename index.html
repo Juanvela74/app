@@ -149,7 +149,7 @@ var PRICES={
   'Real Estate':{small:149,medium:199,large:249}
 };
 // Special first-visit prices for B2B
-var B2B_SETUP={'Real Estate':150,'Casa Piloto':0,'Construction 1-10':0,'Construction 11-30':0,'Construction 31-50+':0};
+var B2B_SETUP={'Real Estate':0,'Casa Piloto':0,'Construction 1-10':0,'Construction 11-30':0,'Construction 31-50+':0};
 var B2B_EXTRA_VENT={'Real Estate':15,'Casa Piloto':20,'Construction 1-10':0,'Construction 11-30':0,'Construction 31-50+':0};
 var INC_V={'Fresh Home':10,'Pure Living':10,'Luxury Air':15,'Casa Piloto':10,'Real Estate':10,'Construction 1-10':0,'Construction 11-30':0,'Construction 31-50+':0};
 var EV_T={'Fresh Home':2,'Pure Living':3,'Luxury Air':2};
@@ -650,12 +650,17 @@ function calcPrice(){
   var prEl=document.getElementById('price-rows');if(prEl)prEl.innerHTML=rows;
   var moEl=document.getElementById('p-mo');if(moEl)moEl.textContent='$'+(isRealEstate?49:monthly);
   var setupAmt=showSetupFee?175:0;
-  var firstVisitTotal = isRealEstate ? (base + 49) : (monthly + setupAmt);
+  var firstVisitTotal = isRealEstate ? 199 : (monthly + setupAmt);
   var fiEl=document.getElementById('p-first');if(fiEl)fiEl.textContent='$'+firstVisitTotal;
-  var setupEl=document.getElementById('p-setup');if(setupEl){setupEl.textContent=showSetupFee?'$175':'$0 (included)';setupEl.style.color=showSetupFee?'':'var(--ok)';}
+  var setupEl=document.getElementById('p-setup');
+  if(setupEl){
+    if(isRealEstate){setupEl.textContent='$150 (included in $199 first visit)';setupEl.style.color='var(--ok)';}
+    else if(showSetupFee){setupEl.textContent='$175';setupEl.style.color='';}
+    else{setupEl.textContent='$0 (no setup fee)';setupEl.style.color='var(--ok)';}
+  }
   var anEl=document.getElementById('p-annual');if(anEl)anEl.textContent='$'+annual.toLocaleString()+'/year';
   var evNote=document.getElementById('p-ev-note');
-  if(evNote){if(ev>0){evNote.textContent='⚡ Extra vents: '+ev+' × $'+evUnitPrice+' = $'+evc+(isB2B?' (B2B rate)':' charged on month 2');evNote.style.display='block';}else{evNote.style.display='none';}}
+  if(evNote){if(ev>0){evNote.textContent='⚡ Extra vents: '+ev+' × $'+evUnitPrice+' = $'+evc+(isRealEstate?' · B2B rate':isConstruction?' · included in price':' · charged on month 2');evNote.style.display='block';}else{evNote.style.display='none';}}
   if(box)box.style.display='block';
 }
 
@@ -938,7 +943,7 @@ function openReceiptModal(id){
   var isSecond=allLogs.length===1;
   // B2B plans have different setup fees
   var isB2Bplan=c.plan==='Real Estate'||c.plan==='Casa Piloto'||(c.plan&&c.plan.includes('Construction'));
-  var b2bSetup=typeof B2B_SETUP!=='undefined'&&B2B_SETUP[c.plan]!==undefined?B2B_SETUP[c.plan]:(isB2Bplan?0:175);
+  var b2bSetup=0; // B2B plans never show separate setup fee
   var defaultSetup=isFirst?b2bSetup:0;
   var setup=lastLog&&lastLog.setup>0?lastLog.setup:defaultSetup;
   var evScheduleText=EV_M[c.plan]||'month 2';
@@ -956,14 +961,14 @@ function openReceiptModal(id){
   var ef2=Math.max(0,tf2-includedF);
   var efc2=ef2*fp2;
   var grandBase=isRE?(isFirst?reInstallPrice:reMonthlyDisplay):c.rate;
-  var grand=grandBase+evTotal+setup+extTotal+efc2;
+  var grand=grandBase+evTotal+(isB2Bplan?0:setup)+extTotal+efc2;
   var isRE=c.plan==='Real Estate';
   var isCP=c.plan==='Casa Piloto';
   var isCB=c.plan&&c.plan.includes('Construction');
-  // For Real Estate: first visit shows installation price, subsequent show $49/mo
-  var reInstallPrice=c.rate; // rate stored as installation price
+  // For Real Estate: first visit = $199 all-in, subsequent = $49/mo
+  var reInstallPrice=199; // Fixed $199 first visit (all-in, no separate setup)
   var reMonthlyDisplay=49;
-  var svcLabel2=isRE?(isFirst?'Real Estate — Installation (first visit)':'Real Estate — Monthly Maintenance'):
+  var svcLabel2=isRE?(isFirst?'Real Estate — First Visit (installation + setup)':'Real Estate — Monthly Maintenance'):
                 isCP?'Casa Piloto — Monthly Service':
                 isCB?'Construction — Post-Build Cleaning':'Monthly Service — '+c.plan;
   var svcAmt=isRE?(isFirst?reInstallPrice:reMonthlyDisplay):c.rate;
@@ -1232,9 +1237,15 @@ function buildPortal(id){
     +'<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#888;margin-bottom:6px">📷 Service Photos</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">'+['Before 1','Before 2','After 1','After 2'].map(function(lbl){return '<div style="aspect-ratio:1;background:var(--gy);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;color:#888;border:1px dashed #ccc"><span style="font-size:18px">📷</span>'+lbl+'</div>';}).join('')+'</div><div style="font-size:10px;color:#888;margin-top:4px;text-align:center">Photos will be available once database is connected</div></div>'
     +'<div style="background:#fff;border:1px solid #f0f0f0;border-radius:8px;padding:10px 14px">'
     +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--dk);margin-bottom:8px">🧾 Receipt Summary</div>'
-    +'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Monthly — '+c.plan+'</span><span style="font-weight:600">$'+c.rate+'</span></div>'
-    +(log.setup>0?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Setup fee (one-time)</span><span style="font-weight:600;color:var(--dk)">$175</span></div>':'')
-    +((function(){var incV2=INC_V[c.plan]||10;var ev2=Math.max(0,(c.vents||0)-incV2);var evc2=ev2*25;var allL=logs.filter(function(l){return l.clientId===c.id;});var isFirst2=allL.indexOf(log)===allL.length-1;var isSecond2=allL.indexOf(log)===allL.length-2;if(isFirst2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--ok)">⚡ Extra vents ('+ev2+'×$25) — charged month 2</span><span style="font-weight:600;color:var(--ok)">Pending</span></div>';if(isSecond2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--gd)">Extra vents ('+ev2+'×$25)</span><span style="font-weight:600;color:var(--gd)">$'+evc2+'</span></div>';return '';})())
+    +(function(){
+      var isRE2=c.plan==='Real Estate';
+      var isB2B2=c.plan==='Casa Piloto'||(c.plan&&c.plan.includes('Construction'));
+      var portalLabel=isRE2?'Real Estate — Monthly Maintenance':(isB2B2?c.plan+' Service':'Monthly — '+c.plan);
+      var portalAmt=isRE2?49:c.rate;
+      return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">'+portalLabel+'</span><span style="font-weight:600">$'+portalAmt+'</span></div>';
+    })()
+    +(log.setup>0?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Setup fee (one-time)</span><span style="font-weight:600;color:var(--dk)">$'+log.setup+'</span></div>':'')
+    +((function(){var incV2=INC_V[c.plan]||10;var ev2=Math.max(0,(c.vents||0)-incV2);var evPrice2=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;var evc2=ev2*evPrice2;var allL=logs.filter(function(l){return l.clientId===c.id;});var isFirst2=allL.indexOf(log)===allL.length-1;var isSecond2=allL.indexOf(log)===allL.length-2;if(isFirst2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--ok)">⚡ Extra vents ('+ev2+'×$'+evPrice2+') — charged month 2</span><span style="font-weight:600;color:var(--ok)">Pending</span></div>';if(isSecond2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--gd)">Extra vents ('+ev2+'×$25)</span><span style="font-weight:600;color:var(--gd)">$'+evc2+'</span></div>';return '';})())
     +((function(){var fp3=FP[c.plan]||35;var tf3=(c.f1q||1)+(c.f2q||0);var ef3=Math.max(0,tf3-2);var efc3=ef3*fp3;return efc3>0?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--tl)">Extra filters ('+ef3+'×$'+fp3+')</span><span style="font-weight:600;color:var(--tl)">$'+efc3+'</span></div>':'';})())
     +(log.extras||[]).map(function(e){return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">+ '+e.n+'</span><span style="font-weight:600;color:var(--er)">$'+e.p+'</span></div>';}).join('')
     +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+log.total+'</span></div>'
