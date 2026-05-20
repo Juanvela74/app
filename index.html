@@ -598,6 +598,11 @@ function calcPrice(){
   var base=PRICES[plan.value]?PRICES[plan.value][size.value]||0:0;
   var incV=INC_V[plan.value]||10;
   var ev=Math.max(0,(parseInt(vents?vents.value:0)||0)-incV);
+  // B2B special display — declared early so evUnitPrice can use them
+  var isConstruction=plan.value.includes('Construction');
+  var isCasaPiloto=plan.value==='Casa Piloto';
+  var isRealEstate=plan.value==='Real Estate';
+  var isB2B=isConstruction||isCasaPiloto||isRealEstate;
   var evUnitPrice=isRealEstate?15:isConstruction?15:25;
   var evc=ev*evUnitPrice;
   var evt=EV_T[plan.value]||1;
@@ -615,11 +620,6 @@ function calcPrice(){
   // For Real Estate, monthly charge is $49, but installation is base
   var actualMonthly = isRealEstate ? 49 : monthly;
   var rateEl=document.getElementById('f-rate');if(rateEl)rateEl.value=actualMonthly;
-  // B2B special display
-  var isConstruction=plan.value.includes('Construction');
-  var isCasaPiloto=plan.value==='Casa Piloto';
-  var isRealEstate=plan.value==='Real Estate';
-  var isB2B=isConstruction||isCasaPiloto||isRealEstate;
 
   // For Real Estate: base = installation fee, monthly = $49
   var reMonthly = isRealEstate ? 49 : 0;
@@ -889,10 +889,13 @@ function saveSvc(){
   var date=document.getElementById('sv-d')?document.getElementById('sv-d').value:'';
   var isFirst=!logs.find(function(l){return l.clientId===cid;});
   var sameDay=c.start===date;
+  var isREplan=c.plan==='Real Estate';
   var b2bSetupFee=typeof B2B_SETUP!=='undefined'&&B2B_SETUP[c.plan]!==undefined?B2B_SETUP[c.plan]:175;
   var setup=(isFirst||sameDay)?b2bSetupFee:0;
   var extTotal=currentExtras.reduce(function(s,e){return s+e.p;},0);
-  var total=c.rate+extTotal+setup;
+  // RE first visit = $199 flat (includes $150 setup + $49 monthly), subsequent = $49
+  var baseRate=isREplan?(isFirst?199:49):c.rate;
+  var total=baseRate+extTotal+(isREplan?0:setup);
   var g=function(id){var el=document.getElementById(id);return el?el.value:'';};
   var newScent=g('sv-scent-new')||c.scent||'';
   if(newScent&&newScent!==c.scent){var sci=clients.findIndex(function(x){return x.id===cid;});if(sci>=0)clients[sci].scent=newScent;}
@@ -934,6 +937,11 @@ function openReceiptModal(id){
   var rnum='PPC-'+Date.now().toString().slice(-6);
   var incV=INC_V[c.plan]||10;
   var ev=Math.max(0,(c.vents||0)-incV);
+  // Declare plan-type flags early so all calculations below can use them
+  var isRE=c.plan==='Real Estate';
+  var isCP=c.plan==='Casa Piloto';
+  var isCB=c.plan&&c.plan.includes('Construction');
+  var isB2Bplan=isRE||isCP||isCB;
   var evPrice=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:(isB2Bplan?15:25);
   var evc=ev*evPrice;
   var ft=FT[c.plan]||'MERV 11';
@@ -941,10 +949,12 @@ function openReceiptModal(id){
   var lastLog=allLogs.length>0?allLogs[0]:null;
   var isFirst=allLogs.length===0;
   var isSecond=allLogs.length===1;
-  // B2B plans have different setup fees
-  var isB2Bplan=c.plan==='Real Estate'||c.plan==='Casa Piloto'||(c.plan&&c.plan.includes('Construction'));
-  var b2bSetup=0; // B2B plans never show separate setup fee
-  var defaultSetup=isFirst?b2bSetup:0;
+  // For Real Estate: first visit = $199 all-in ($150 setup + $49 monthly), subsequent = $49/mo
+  var reInstallPrice=199; // Fixed $199 first visit (all-in)
+  var reSetupFee=150;     // Setup portion = $150 (shown inside $199)
+  var reMonthlyDisplay=49;
+  // Residential setup fee = $175; RE has no separate setup line (included in $199)
+  var defaultSetup=isFirst&&!isB2Bplan?175:0;
   var setup=lastLog&&lastLog.setup>0?lastLog.setup:defaultSetup;
   var evScheduleText=EV_M[c.plan]||'month 2';
   var showEVPending=isFirst&&ev>0;
@@ -954,31 +964,26 @@ function openReceiptModal(id){
   var evTotal=showEVCharged?evc:0;
   var extItems=lastLog?lastLog.extras:[];
   var extTotal=extItems.reduce(function(s,e){return s+e.p;},0);
-  // Extra filters beyond 2 included
+  // Extra filters beyond included amount
   var fp2=FP[c.plan]||35;
   var tf2=(c.f1q||1)+(c.f2q||0);
   var includedF=c.units==='2'?4:2; // 2 per HVAC system
   var ef2=Math.max(0,tf2-includedF);
   var efc2=ef2*fp2;
+  // Grand total: RE first visit is $199 flat + extras (no separate setup); RE monthly = $49 + extras
   var grandBase=isRE?(isFirst?reInstallPrice:reMonthlyDisplay):c.rate;
   var grand=grandBase+evTotal+(isB2Bplan?0:setup)+extTotal+efc2;
-  var isRE=c.plan==='Real Estate';
-  var isCP=c.plan==='Casa Piloto';
-  var isCB=c.plan&&c.plan.includes('Construction');
-  // For Real Estate: first visit = $199 all-in, subsequent = $49/mo
-  var reInstallPrice=199; // Fixed $199 first visit (all-in, no separate setup)
-  var reMonthlyDisplay=49;
   var svcLabel2=isRE?(isFirst?'Real Estate — First Visit (installation + setup)':'Real Estate — Monthly Maintenance'):
                 isCP?'Casa Piloto — Monthly Service':
                 isCB?'Construction — Post-Build Cleaning':'Monthly Service — '+c.plan;
   var svcAmt=isRE?(isFirst?reInstallPrice:reMonthlyDisplay):c.rate;
-  var svcDesc=isRE?'Installation + showing day service · diffuser active on showing days':
+  var svcDesc=isRE?(isFirst?'Installation ($'+reSetupFee+' setup + $'+reMonthlyDisplay+' monthly) · diffuser active on showing days':'Showing day service · diffuser active on showing days'):
               isCP?'Monthly pilot home service · fragrance + filter + report':
               isCB?'Post-construction deep clean + disinfection + dust removal':
               'Duct cleaning + scent + '+ft+' filters · '+incV+' vents included';
   var svcLabel=isRE?'Real Estate Service':(isCB?'Construction Cleaning':('Monthly Service — '+c.plan));
   var rows='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">'+(svcLabel2||svcLabel)+'<br><span style="font-size:11px;color:#888">'+svcDesc+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+(svcAmt||c.rate)+'</td></tr>';
-  if(setup>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:var(--lt)"><td style="padding:10px 12px;font-size:13px">Setup fee — diffuser + air sensor<br><span style="font-size:11px;color:var(--md)">One-time · first visit only</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--dk)">$175</td></tr>';
+  if(setup>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:var(--lt)"><td style="padding:10px 12px;font-size:13px">Setup fee — diffuser + air sensor<br><span style="font-size:11px;color:var(--md)">One-time · first visit only</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--dk)">$'+setup+'</td></tr>';
   if(showEVPending)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#F5FFF5"><td style="padding:10px 12px;font-size:13px">Extra vents ('+ev+'×$'+evPrice+' = $'+evc+')<br><span style="font-size:11px;color:var(--ok)">⚡ Will be charged on next visit (month 2)</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--ok)">Pending</td></tr>';
   if(showEVCharged)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#FFFBF0"><td style="padding:10px 12px;font-size:13px">Extra vents ('+ev+'×$'+evPrice+')<br><span style="font-size:11px;color:var(--gd)">Scheduled: '+evScheduleText+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--gd)">$'+evc+'</td></tr>';
   extItems.forEach(function(e){rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#FFF8F0"><td style="padding:10px 12px;font-size:13px">+ '+e.n+'</td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--er)">$'+e.p+'</td></tr>';});
@@ -1245,7 +1250,7 @@ function buildPortal(id){
       return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">'+portalLabel+'</span><span style="font-weight:600">$'+portalAmt+'</span></div>';
     })()
     +(log.setup>0?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Setup fee (one-time)</span><span style="font-weight:600;color:var(--dk)">$'+log.setup+'</span></div>':'')
-    +((function(){var incV2=INC_V[c.plan]||10;var ev2=Math.max(0,(c.vents||0)-incV2);var evPrice2=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;var evc2=ev2*evPrice2;var allL=logs.filter(function(l){return l.clientId===c.id;});var isFirst2=allL.indexOf(log)===allL.length-1;var isSecond2=allL.indexOf(log)===allL.length-2;if(isFirst2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--ok)">⚡ Extra vents ('+ev2+'×$'+evPrice2+') — charged month 2</span><span style="font-weight:600;color:var(--ok)">Pending</span></div>';if(isSecond2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--gd)">Extra vents ('+ev2+'×$25)</span><span style="font-weight:600;color:var(--gd)">$'+evc2+'</span></div>';return '';})())
+    +((function(){var incV2=INC_V[c.plan]||10;var ev2=Math.max(0,(c.vents||0)-incV2);var evPrice2=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;var evc2=ev2*evPrice2;var allL=logs.filter(function(l){return l.clientId===c.id;});var isFirst2=allL.indexOf(log)===allL.length-1;var isSecond2=allL.indexOf(log)===allL.length-2;if(isFirst2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--ok)">⚡ Extra vents ('+ev2+'×$'+evPrice2+') — charged month 2</span><span style="font-weight:600;color:var(--ok)">Pending</span></div>';if(isSecond2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--gd)">Extra vents ('+ev2+'×$'+evPrice2+')</span><span style="font-weight:600;color:var(--gd)">$'+evc2+'</span></div>';return '';})())
     +((function(){var fp3=FP[c.plan]||35;var tf3=(c.f1q||1)+(c.f2q||0);var ef3=Math.max(0,tf3-2);var efc3=ef3*fp3;return efc3>0?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--tl)">Extra filters ('+ef3+'×$'+fp3+')</span><span style="font-weight:600;color:var(--tl)">$'+efc3+'</span></div>':'';})())
     +(log.extras||[]).map(function(e){return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">+ '+e.n+'</span><span style="font-weight:600;color:var(--er)">$'+e.p+'</span></div>';}).join('')
     +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+log.total+'</span></div>'
