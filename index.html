@@ -829,6 +829,8 @@ function openSvcModal(clientId){
     +'<div><label>Technician</label><select id="sv-tech"><option>Juan Vela</option><option>Jose Vela</option></select></div>'
     +'<div><label>Status</label><select id="sv-s"><option>Completed</option><option>Pending</option><option>Cancelled</option></select></div>'
     +'<div><label>Duration (min)</label><input type="number" id="sv-dur" placeholder="90"></div>'
+    +'<div><label>Total Vents</label><input type="number" id="sv-vents" value="'+(c?c.vents||10:10)+'" placeholder="10" min="1"></div>'
+    +'<div><label>Extra Vents</label><input type="number" id="sv-ev" readonly style="background:#f9f9f9;font-size:12px;color:var(--tl);font-weight:600" value="0" placeholder="0"><span style="font-size:10px;color:#888;display:block;margin-top:2px">Included: '+(c?INC_V[c.plan]||10:10)+' · Extra: $'+(c?(typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25):25)+'/ea</span></div>'
     +'<div><label>Filters Changed</label><select id="sv-f1"><option>Yes</option><option>No</option></select></div>'
     +'<div><label>Filter Info</label><input readonly style="background:#f9f9f9;font-size:12px" value="'+(c?(c.f1q||1)+'x '+ft+(c.f2q>0?' + '+c.f2q+'x '+c.f2:''):'—')+'"></div>'
     +'<div><label>Scent Refilled</label><select id="sv-sc"><option>Yes</option><option>No</option></select></div>'
@@ -856,6 +858,34 @@ function openSvcModal(clientId){
       eb.appendChild(b);
     });
   }
+  // Auto-calculate extra vents in service log
+  function updateSvVents(){
+    var svC=document.getElementById('sv-c');
+    var svV=document.getElementById('sv-vents');
+    var svEv=document.getElementById('sv-ev');
+    if(!svV||!svEv)return;
+    var cid2=svC?svC.value:'';
+    var c2=clients.find(function(x){return x.id===cid2;});
+    var incV2=c2?INC_V[c2.plan]||10:10;
+    var total2=parseInt(svV.value)||0;
+    var extra2=Math.max(0,total2-incV2);
+    svEv.value=extra2;
+    svEv.style.color=extra2>0?'var(--tl)':'#666';
+    var hint=svEv.nextElementSibling;
+    if(hint&&c2){
+      var evP2=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c2.plan]!==undefined?B2B_EXTRA_VENT[c2.plan]:25;
+      hint.textContent='Included: '+incV2+' · Extra: $'+evP2+'/ea'+(extra2>0?' → $'+(extra2*evP2)+' charged month 2':'');
+    }
+  }
+  var svVentsEl=document.getElementById('sv-vents');
+  if(svVentsEl){svVentsEl.addEventListener('input',updateSvVents);updateSvVents();}
+  var svCsel=document.getElementById('sv-c');
+  if(svCsel){svCsel.addEventListener('change',function(){
+    var c3=clients.find(function(x){return x.id===this.value;}.bind(this));
+    var svVEl=document.getElementById('sv-vents');
+    if(svVEl&&c3)svVEl.value=c3.vents||INC_V[c3.plan]||10;
+    updateSvVents();
+  });}
   document.getElementById('mo-svc').classList.add('on');
 }
 
@@ -893,6 +923,12 @@ function saveSvc(){
   var b2bSetupFee=typeof B2B_SETUP!=='undefined'&&B2B_SETUP[c.plan]!==undefined?B2B_SETUP[c.plan]:175;
   var setup=(isFirst||sameDay)?b2bSetupFee:0;
   var extTotal=currentExtras.reduce(function(s,e){return s+e.p;},0);
+  // Read vents from service log form (may have been updated during visit)
+  var svVentsVal=document.getElementById('sv-vents')?parseInt(document.getElementById('sv-vents').value)||c.vents||10:c.vents||10;
+  var svEvVal=document.getElementById('sv-ev')?parseInt(document.getElementById('sv-ev').value)||0:0;
+  // Update client vents if changed during visit
+  var ci0=clients.findIndex(function(x){return x.id===cid;});
+  if(ci0>=0&&svVentsVal!==clients[ci0].vents)clients[ci0].vents=svVentsVal;
   // RE first visit = $199 flat (includes $150 setup + $49 monthly), subsequent = $49
   var baseRate=isREplan?(isFirst?199:49):c.rate;
   var total=baseRate+extTotal+(isREplan?0:setup);
@@ -903,6 +939,7 @@ function saveSvc(){
     date:date,time:g('sv-t'),tech:g('sv-tech'),status:g('sv-s'),
     f1:g('sv-f1'),scent:g('sv-sc'),benef:g('sv-b'),diff:g('sv-dif'),
     rating:parseInt(g('sv-r'))||5,notes:g('sv-n'),dur:g('sv-dur'),
+    vents:svVentsVal,extraVents:svEvVal,
     extras:currentExtras.slice(),extTotal:extTotal,setup:setup,total:total,
     filterType:FT[c.plan]||'MERV 11',clientScent:c.scent||''};
   logs.unshift(log);
@@ -1268,17 +1305,20 @@ function buildPortal(id){
     +((function(){var fp3=FP[c.plan]||35;var tf3=(c.f1q||1)+(c.f2q||0);var ef3=Math.max(0,tf3-2);var efc3=ef3*fp3;return efc3>0?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--tl)">Extra filters ('+ef3+'×$'+fp3+')</span><span style="font-weight:600;color:var(--tl)">$'+efc3+'</span></div>':'';})())
     +(log.extras||[]).map(function(e){return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">+ '+e.n+'</span><span style="font-weight:600;color:var(--er)">$'+e.p+'</span></div>';}).join('')
     +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+(function(){
-      // Recalculate total to ensure accuracy
+      // Recalculate total to ensure accuracy including extra vents
       var allL3=logs.filter(function(l){return l.clientId===c.id;});
       var logIdx3=allL3.indexOf(log);
       var isFirstLog3=(logIdx3===allL3.length-1);
+      var isSecondLog3=(logIdx3===allL3.length-2);
       var isRE3=c.plan==='Real Estate';
-      var baseAmt3=isRE3?(isFirstLog3?199:49):log.total;
-      if(isRE3){
-        var extTotal3=(log.extras||[]).reduce(function(s,e){return s+e.p;},0);
-        return baseAmt3+extTotal3;
-      }
-      return log.total;
+      var baseAmt3=isRE3?(isFirstLog3?199:49):(c.rate+(log.setup||0));
+      var extTotal3=(log.extras||[]).reduce(function(s,e){return s+e.p;},0);
+      // Add extra vents if they should be charged this visit
+      var incV3=INC_V[c.plan]||10;
+      var ev3=Math.max(0,(c.vents||0)-incV3);
+      var evPrice3=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;
+      var evAmt3=(isSecondLog3&&ev3>0)?ev3*evPrice3:0;
+      return baseAmt3+extTotal3+evAmt3;
     })()+'</span></div>'
     +'<div style="text-align:center;margin-top:8px" id="print-btn-'+log.id+'"></div>'
     +'</div></div>';
