@@ -113,7 +113,13 @@ tr:hover td{background:var(--lt)}
 <div class="md">
   <div class="mh"><h2 id="mc-title">New Client</h2><button class="xb" id="mc-close">✕</button></div>
   <div class="mb" id="mc-body"></div>
-  <div class="mf"><button class="btn bo" id="mc-cancel">Cancel</button><button class="btn bp" id="mc-save">Save Client</button></div>
+  <div class="mf" style="flex-wrap:wrap;gap:8px">
+    <button class="btn bo" id="mc-cancel">Cancel</button>
+    <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
+      <button class="btn bp" id="mc-save" title="Save client and schedule 12 visits. Work starts on first scheduled date.">💾 Save &amp; Schedule</button>
+      <button class="btn" id="mc-save-eval" style="background:var(--gd);color:#fff;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600" title="Client wants evaluation today before committing. Charges setup fee now, schedules service for another day.">🔍 Evaluation Today</button>
+    </div>
+  </div>
 </div>
 </div>
 
@@ -182,7 +188,22 @@ var editingClientId=null;
 
 // ── STORAGE ───────────────────────────────────────────────────────────────
 function save(){try{localStorage.setItem('ppc_c',JSON.stringify(clients));localStorage.setItem('ppc_l',JSON.stringify(logs));}catch(e){}}
-function load(){try{var c=localStorage.getItem('ppc_c');var l=localStorage.getItem('ppc_l');if(c){var p=JSON.parse(c);if(p&&p.length)clients=p;}if(l){var p2=JSON.parse(l);if(p2&&p2.length)logs=p2;}}catch(e){}}
+function load(){
+  try{
+    var c=localStorage.getItem('ppc_c');
+    var l=localStorage.getItem('ppc_l');
+    if(c){var p=JSON.parse(c);if(p&&p.length)clients=p;}
+    if(l){var p2=JSON.parse(l);if(p2&&p2.length)logs=p2;}
+    // Recalculate rate for every client to fix any stale/wrong prices
+    clients.forEach(function(cl){
+      var isRE=cl.plan==='Real Estate';
+      var base=PRICES[cl.plan]?PRICES[cl.plan][cl.size||'medium']||0:0;
+      var sec=cl.units==='2'?Math.round(base*0.5):0;
+      var correct=isRE?49:(base+sec);
+      if(correct>0)cl.rate=correct;
+    });
+  }catch(e){}
+}
 
 // ── TOAST ─────────────────────────────────────────────────────────────────
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(function(){t.style.display='none';},3000);}
@@ -431,6 +452,19 @@ function getVisitsOnDate(dateStr){
   return clients.filter(function(c){return c.status==='Active'&&c.next===dateStr;});
 }
 
+// Visit slots: 3 per day — 8:30 start, ~2.5h service + 30min travel between
+// Slot 1: 8:30 | Slot 2: 11:30 (2.5h service + 30min travel) | Slot 3: 14:30 (2.5h + 30min lunch)
+var VISIT_SLOTS=['08:30','11:30','14:30'];
+
+function getSlotTime(ds){
+  // Count how many scheduled/completed logs are already on this date
+  var taken=logs.filter(function(l){return l.date===ds;}).map(function(l){return l.time||'09:00';});
+  for(var s=0;s<VISIT_SLOTS.length;s++){
+    if(taken.indexOf(VISIT_SLOTS[s])===-1) return VISIT_SLOTS[s];
+  }
+  return VISIT_SLOTS[0]; // fallback
+}
+
 function smartAssignDate(startDate, clientAddr){
   var MAX_PER_DAY=3;
   var d=new Date(startDate+'T12:00:00');
@@ -439,23 +473,22 @@ function smartAssignDate(startDate, clientAddr){
   // Try up to 30 days forward to find best slot
   for(var i=0;i<30;i++){
     var ds=d.toISOString().split('T')[0];
-    var visitsToday=getVisitsOnDate(ds);
+    var visitsToday=logs.filter(function(l){return l.date===ds;});
     
     if(visitsToday.length<MAX_PER_DAY){
-      // Day has space - check if there are nearby clients (same ZIP)
-      var nearbyCount=visitsToday.filter(function(c){return getZip(c.addr)===clientZip;}).length;
-      
-      // Prefer days with nearby clients, or days with 0 visits
+      var nearbyCount=visitsToday.filter(function(l){
+        var c2=clients.find(function(x){return x.id===l.clientId;});
+        return c2&&getZip(c2.addr)===clientZip;
+      }).length;
       if(nearbyCount>0||visitsToday.length===0||i>6){
-        return {date:ds, visits:visitsToday.length, nearby:nearbyCount, full:false};
+        var assignedTime=getSlotTime(ds);
+        return {date:ds, time:assignedTime, visits:visitsToday.length, nearby:nearbyCount, full:false};
       }
     }
     d.setDate(d.getDate()+1);
-    // Skip Sundays
-    if(d.getDay()===0)d.setDate(d.getDate()+1);
+    if(d.getDay()===0)d.setDate(d.getDate()+1); // Skip Sundays
   }
-  // Fallback - just use start date
-  return {date:startDate, visits:0, nearby:0, full:false};
+  return {date:startDate, time:'09:00', visits:0, nearby:0, full:false};
 }
 
 function autoAssignNextVisit(clientId){
@@ -479,15 +512,14 @@ function autoAssignNextVisit(clientId){
 
 function openRescheduleClient(id){
   var c=clients.find(function(x){return x.id===id;});if(!c)return;
-  // Smart find best new date
   var base=c.next||new Date().toISOString().split('T')[0];
   var result=smartAssignDate(base,c.addr);
-  var msg='📅 Smart reschedule for '+c.name+'\n\nBest available date: '+result.date;
-  if(result.nearby>0)msg+='\n✅ '+result.nearby+' nearby client(s) already scheduled that day!';
-  msg+='\n('+result.visits+'/3 visits that day)\n\nConfirm this date?';
+  var msg='📅 Smart reschedule for '+c.name+'\n\nBest date: '+result.date+' @ '+result.time;
+  if(result.nearby>0)msg+='\n✅ '+result.nearby+' nearby client(s) same day!';
+  msg+='\n('+result.visits+'/3 visits that day)\n\nConfirm?';
   if(confirm(msg)){
     var ci=clients.findIndex(function(x){return x.id===id;});
-    if(ci>=0){clients[ci].next=result.date;save();buildClientsTable(clients);toast('✅ Rescheduled to '+result.date);}
+    if(ci>=0){clients[ci].next=result.date;clients[ci].time=result.time;save();buildClientsTable(clients);toast('✅ Rescheduled to '+result.date+' @ '+result.time);}
   }
 }
 
@@ -512,15 +544,16 @@ function deleteClient(id){
   var c=clients.find(function(x){return x.id===id;});
   if(!c)return;
   var hasLogs=logs.find(function(l){return l.clientId===id;});
-  if(hasLogs){
-    if(!confirm('This client has service history. Are you sure you want to delete? Consider inactivating instead.'))return;
-  } else {
-    if(!confirm('Delete client '+c.name+'? This cannot be undone.'))return;
-  }
+  var msg=hasLogs
+    ?'Delete '+c.name+'?\n\nThis client has visit history. Type DELETE to confirm:'
+    :'Delete '+c.name+'? Type DELETE to confirm:';
+  var input=prompt(msg);
+  if(!input||input.trim().toUpperCase()!=='DELETE'){toast('❌ Deletion cancelled — type DELETE to confirm');return;}
   clients=clients.filter(function(x){return x.id!==id;});
+  logs=logs.filter(function(l){return l.clientId!==id;}); // also remove their logs
   save();
   buildClientsTable(clients);
-  toast('🗑️ Client deleted');
+  toast('🗑️ '+c.name+' deleted');
 }
 
 function openNewClient(){
@@ -664,17 +697,29 @@ function calcPrice(){
   if(box)box.style.display='block';
 }
 
-function saveClient(){
+function saveClient(mode){
+  // mode: 'schedule' (default, Flujo A) or 'eval' (Flujo B - evaluation today)
+  mode = mode || 'schedule';
   var fid=document.getElementById('f-id');
   var fname=document.getElementById('f-name');
   if(!fid||!fname||!fid.value||!fname.value){toast('⚠️ ID and Name required');return;}
   var g=function(id){var el=document.getElementById(id);return el?el.value:'';};
+  // Calculate rate from PRICES to ensure accuracy
+  var planVal=g('f-plan')||'Fresh Home';
+  var sizeVal=g('f-size')||'medium';
+  var unitsVal=g('f-units')||'1';
+  var baseRate=PRICES[planVal]?PRICES[planVal][sizeVal]||0:0;
+  var secRate=unitsVal==='2'?Math.round(baseRate*0.5):0;
+  var isREplan2=planVal==='Real Estate';
+  var calculatedRate=isREplan2?49:(baseRate+secRate);
+  var savedRate=parseInt(g('f-rate'))||0;
+  var finalRate=savedRate>0?savedRate:calculatedRate;
   var client={
     id:g('f-id'),name:g('f-name'),phone:g('f-phone'),email:g('f-email'),addr:g('f-addr'),
     sqft:parseInt(g('f-sqft'))||0,year:parseInt(g('f-year'))||0,
-    plan:g('f-plan')||'Fresh Home',size:g('f-size')||'medium',
-    rate:parseInt(g('f-rate'))||119,vents:parseInt(g('f-vents'))||10,
-    extraVents:parseInt(g('f-events'))||0,hvac:g('f-hvac'),units:g('f-units')||'1',
+    plan:planVal,size:sizeVal,
+    rate:finalRate,vents:parseInt(g('f-vents'))||10,
+    extraVents:parseInt(g('f-events'))||0,hvac:g('f-hvac'),units:unitsVal,
     f1:g('f-f1'),f1q:parseInt(g('f-f1q'))||1,f2:g('f-f2'),f2q:parseInt(g('f-f2q'))||0,
     diff:g('f-diff'),ds1:g('f-ds1'),ds2:g('f-ds2'),scent:g('f-scent'),
     status:'Active',start:g('f-start'),next:g('f-next'),time:g('f-time'),day:g('f-day'),
@@ -690,6 +735,7 @@ function saveClient(){
     if(dupEmail&&!dupPhone){if(!confirm('⚠️ A client with email '+client.email+' already exists ('+dupEmail.name+'). Continue anyway?'))return;}
     if(dupAddr&&!dupPhone&&!dupEmail){if(!confirm('⚠️ A client at this address already exists ('+dupAddr.name+'). Continue anyway?'))return;}
   }
+  var isNew=idx<0;
   if(idx>=0){
     var orig=clients[idx].first;
     clients[idx]=client;
@@ -697,26 +743,335 @@ function saveClient(){
     toast('✅ Client updated!');
   } else {
     clients.push(client);
-    // Smart assign next visit date
     var result=smartAssignDate(client.next||client.start, client.addr);
     var ni=clients.length-1;
     clients[ni].next=result.date;
-    var msg='✅ Client saved! Next visit assigned: '+result.date;
-    if(result.nearby>0) msg+=' ('+result.nearby+' nearby client'+(result.nearby>1?'s':'')+' same day)';
-    if(result.visits>0) msg+=' — '+result.visits+'/3 visits that day';
+    clients[ni].time=result.time;
+    var scheduleMode=mode;
+    var startDateStr=result.date||client.start;
+    var todayStr=new Date().toISOString().split('T')[0];
+    // FLUJO B: create a Completed log for TODAY (evaluation/contract day - setup fee only)
+    if(mode==='eval'){
+      var isREeval=client.plan==='Real Estate';
+      var evalSetup=isREeval?150:175;
+      var evalMonthly=isREeval?49:0;
+      var evalTotal=isREeval?(evalSetup+evalMonthly):evalSetup;
+      logs.push({
+        id:'EVAL-'+Date.now(),
+        clientId:client.id,clientName:client.name,plan:client.plan,
+        date:todayStr,time:new Date().toTimeString().slice(0,5),tech:'Juan Vela',
+        status:'Completed',visitType:'evaluation',
+        setup:evalSetup,total:evalTotal,extras:[],extTotal:0,
+        filterType:FT[client.plan]||'MERV 11',clientScent:client.scent||'',
+        notes:'Contract signed. Plan: '+client.plan+' ('+client.size+'). Diffuser installed.',
+        f1:'No',scent:'No',benef:'No',diff:'Yes',rating:5
+      });
+    }
+    // Auto-schedule 12 monthly service visits
+    for(var m=0;m<12;m++){
+      var vDate=new Date(startDateStr+'T12:00:00');
+      vDate.setMonth(vDate.getMonth()+m);
+      var vDateStr=vDate.toISOString().split('T')[0];
+      var slotTime=getSlotTime(vDateStr);
+      logs.push({
+        id:'SCH-'+Date.now()+'-'+m,
+        clientId:client.id,clientName:client.name,plan:client.plan,
+        date:vDateStr,time:slotTime,tech:'Juan Vela',
+        status:'Scheduled',total:0,extras:[],extTotal:0,setup:0,
+        filterType:FT[client.plan]||'MERV 11',clientScent:client.scent||''
+      });
+    }
+    logs.sort(function(a,b){return b.date.localeCompare(a.date);});
+    var msg=scheduleMode==='eval'?'✅ Contract saved! Eval receipt opening...':'✅ Client saved! 12 visits scheduled.';
+    if(result.nearby>0) msg+=' ('+result.nearby+' nearby)';
+    msg+=' | First service: '+result.date+' @ '+result.time;
     toast(msg);
   }
   save();
   document.getElementById('mo-client').classList.remove('on');
+  clearLicense&&clearLicense();
   if(currentPage==='clients')renderPage();
+  // FLUJO B: show evaluation receipt immediately (setup fee only)
+  if(mode==='eval'&&isNew){
+    setTimeout(function(){openEvalReceipt(client);},300);
+  }
 }
 
-// ── SERVICE LOG ───────────────────────────────────────────────────────────
-function renderLogPage(el){
-  el.innerHTML='<div class="ph"><div><h1>Service Log</h1><p>Every visit recorded</p></div><button class="btn bp" id="btn-new-svc">+ Log Visit</button></div>'
-    +'<div id="log-list">'+(logs.length?'':'<div class="es"><div class="ei">📋</div><h3>No visits yet</h3></div>')+'</div>';
-  renderLogItems();
+function openEvalReceipt(client){
+  var today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+  var rnum='PPC-'+Date.now().toString().slice(-6);
+  var isRE=client.plan==='Real Estate';
+  var isB2B=client.plan==='Casa Piloto'||(client.plan&&client.plan.includes('Construction'));
+  // Setup fees
+  var setupFee=isRE?150:(isB2B?0:175);
+  var monthlyFee=isRE?49:client.rate;
+  var totalToday=isRE?(setupFee+monthlyFee):setupFee; // RE: $150+$49=$199 | Residential: $175
+  var nextVisit=logs.filter(function(l){return l.clientId===client.id&&l.status==='Scheduled';}).sort(function(a,b){return a.date.localeCompare(b.date);})[0];
+  var nextDate=nextVisit?nextVisit.date:'TBD';
+  // Build rows
+  var rows='';
+  if(isRE){
+    rows+='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">Real Estate — Setup Fee<br><span style="font-size:11px;color:#888">Diffuser installation · air sensor · plan activation</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+setupFee+'</td></tr>';
+    rows+='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">Real Estate — First Month<br><span style="font-size:11px;color:#888">Monthly maintenance · diffuser active on showing days</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+monthlyFee+'</td></tr>';
+  } else {
+    rows+='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">Setup Fee — Diffuser Installation<br><span style="font-size:11px;color:#888">Diffuser installed · plan activated · first service on '+nextDate+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+setupFee+'</td></tr>';
+  }
+  rows+='<tr style="background:var(--tll)"><td style="padding:12px;font-weight:700;color:var(--tl);font-size:14px">TOTAL TODAY</td><td style="padding:12px;text-align:right;font-weight:700;color:var(--tl);font-size:20px">$'+totalToday+'</td></tr>';
+  document.getElementById('mr-body').innerHTML=
+    '<div style="text-align:center;margin-bottom:1.25rem"><div style="font-size:20px;font-weight:700;color:var(--dk);font-family:Playfair Display,serif">PrecisionProCare</div>'
+    +'<div style="font-size:11px;color:#888">JLM Global Services LLC · 1617 Wake Dr, Wake Forest, NC 27587</div>'
+    +'<div style="font-size:11px;color:#888">(919) 398-0003 · service@precisionprocare.com</div></div>'
+    +'<div style="display:flex;justify-content:space-between;padding:.75rem 0;border-bottom:1px solid #f0f0f0">'
+    +'<div><div style="font-size:10px;color:#888;text-transform:uppercase">Receipt #</div><div style="font-weight:600">'+rnum+'</div></div>'
+    +'<div style="text-align:right"><div style="font-size:10px;color:#888;text-transform:uppercase">Date</div><div style="font-weight:600">'+today+'</div></div></div>'
+    +'<div style="background:var(--gy);border-radius:8px;padding:10px 14px;margin:.75rem 0">'
+    +'<div style="font-size:10px;color:#888;text-transform:uppercase;margin-bottom:5px">Bill To</div>'
+    +'<div style="font-weight:600">'+client.name+'</div>'
+    +'<div style="font-size:12px;color:#444">'+client.addr+'</div>'
+    +'<div style="font-size:12px;color:#444">'+client.phone+'</div></div>'
+    +'<div style="background:#EAF3DE;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#3B6D11">'
+    +'<strong>📋 Plan: '+client.plan+' ('+client.size+')</strong> — $'+client.rate+'/mo'+(isRE?' · RE plan':'')+' <br>'
+    +'First service: <strong>'+nextDate+'</strong> @ '+(client.time||'09:00')+'</div>'
+    +'<table style="width:100%;border-collapse:collapse">'
+    +'<thead><tr style="background:var(--dk)"><th style="padding:8px 12px;text-align:left;color:#fff;font-size:11px">Description</th><th style="padding:8px 12px;text-align:right;color:#fff;font-size:11px">Amount</th></tr></thead>'
+    +'<tbody>'+rows+'</tbody></table>'
+    +'<div style="text-align:center;font-size:11px;color:var(--tl);margin-top:12px;padding:10px;background:var(--tll);border-radius:8px">'
+    +'✦ Thank you for choosing PrecisionProCare ✦<br>'
+    +'<span style="color:#888">Scent: '+(client.scent||'—')+' · Next service: '+nextDate+'</span></div>';
+  document.getElementById('mo-receipt').classList.add('on');
 }
+
+// ── COMPLETE VISIT MODAL ─────────────────────────────────────────────────
+function openCompleteVisitModal(logId, clientId){
+  currentSvcId=clientId;
+  currentExtras=[];
+  var log=logs.find(function(l){return l.id===logId;});
+  var c=clients.find(function(x){return x.id===clientId;});
+  if(!c||!log)return;
+  var ft=FT[c.plan]||'MERV 11';
+  var allCompleted=logs.filter(function(l){return l.clientId===clientId&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
+  var isFirst=allCompleted.length===0;
+  var isREplan=c.plan==='Real Estate';
+  var showSetup=isFirst&&!isREplan;
+  document.getElementById('ms-body').innerHTML=
+    '<div style="background:var(--lt);border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:13px">'
+    +'<strong>'+c.name+'</strong> · '+c.plan+' · $'+c.rate+'/mo<br>'
+    +'<span style="color:#888">Visit: '+log.date+' @ '+(log.time||'09:00')+'</span>'
+    +(isFirst?'<br><span style="color:var(--tl);font-weight:600">✓ First visit — '+(isREplan?'$199 all-in (setup+monthly)':'$175 setup included')+'</span>':'')
+    +'</div>'
+    +'<div class="fg">'
+    +'<div><label>Date</label><input type="date" id="sv-d" value="'+log.date+'"></div>'
+    +'<div><label>Time</label><input type="time" id="sv-t" value="'+(log.time||'09:00')+'"></div>'
+    +'<div><label>Technician</label><select id="sv-tech"><option>Juan Vela</option><option>Jose Vela</option></select></div>'
+    +'<div><label>Duration (min)</label><input type="number" id="sv-dur" placeholder="90"></div>'
+    +'<div><label>Total Vents</label><input type="number" id="sv-vents" value="'+(c.vents||10)+'" min="1"></div>'
+    +'<div><label>Extra Vents</label><input type="number" id="sv-ev" readonly style="background:#f9f9f9;font-size:12px;color:var(--tl);font-weight:600" value="0"><span style="font-size:10px;color:#888;display:block;margin-top:2px">Included: '+(INC_V[c.plan]||10)+' · $'+(typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25)+'/ea</span></div>'
+    +'<div><label>Filters Changed</label><select id="sv-f1"><option>Yes</option><option>No</option></select></div>'
+    +'<div><label>Filter Info</label><input readonly style="background:#f9f9f9;font-size:12px" value="'+(c.f1q||1)+'x '+ft+(c.f2q>0?' + '+c.f2q+'x '+c.f2:'')+'"></div>'
+    +'<div><label>Scent Refilled</label><select id="sv-sc"><option>Yes</option><option>No</option></select></div>'
+    +'<div><label>Benefect Applied</label><select id="sv-b"><option>'+(c.plan==='Luxury Air'?'Yes':'No')+'</option><option>'+(c.plan==='Luxury Air'?'No':'Yes')+'</option></select></div>'
+    +'<div><label>Diffuser Checked</label><select id="sv-dif"><option>Yes</option><option>No</option></select></div>'
+    +'<div><label>Rating</label><select id="sv-r"><option value="5">⭐⭐⭐⭐⭐</option><option value="4">⭐⭐⭐⭐</option><option value="3">⭐⭐⭐</option><option value="2">⭐⭐</option><option value="1">⭐</option></select></div>'
+    +'<div class="ff"><label>Fragrance This Visit</label><select id="sv-scent-new">'+SCENTS.map(function(s){return '<option value="'+s.n+'"'+(s.n===c.scent?' selected':'')+'>'+s.em+' '+s.n+'</option>';}).join('')+'</select></div>'
+    +'<div class="ff"><label>Notes</label><textarea id="sv-n" rows="2" placeholder="Notes..."></textarea></div>'
+    +'</div>'
+    +'<div style="margin-top:1rem"><div class="st">📷 Photos</div>'
+    +'<div class="pug">'+['Before 1','Before 2','After 1','After 2'].map(function(l,i){return '<div class="psl"><div style="font-size:20px">📷</div><div>'+l+'</div><input type="file" accept="image/*" capture="environment"></div>';}).join('')+'</div></div>'
+    +'<div style="margin-top:1rem"><div class="st">💰 Extra Charges</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px" id="extras-btns"></div>'
+    +'<div id="extras-list"><div style="font-size:12px;color:#888">No extras added</div></div>'
+    +'<div style="display:flex;justify-content:space-between;font-weight:700;color:var(--tl);font-size:15px;padding-top:8px;border-top:1px solid #f0f0f0"><span>Extras Total:</span><span id="extras-total">$0</span></div>'
+    +'</div>';
+  // Build extras buttons
+  var eb=document.getElementById('extras-btns');
+  if(eb){EXTRAS_MENU.forEach(function(item){var b=document.createElement('button');b.className='btn bo bs';b.style.fontSize='11px';b.textContent=item.n+(item.custom?'':'  $'+item.p);b.addEventListener('click',function(){addExtra(item);});eb.appendChild(b);});}
+  // Vents auto-calc
+  var svVentsEl2=document.getElementById('sv-vents');
+  function updateSvVents2(){
+    var svV=document.getElementById('sv-vents');var svEv=document.getElementById('sv-ev');if(!svV||!svEv)return;
+    var incV3=INC_V[c.plan]||10;var tot3=parseInt(svV.value)||0;var ex3=Math.max(0,tot3-incV3);
+    svEv.value=ex3;svEv.style.color=ex3>0?'var(--tl)':'#666';
+    var hint=svEv.nextElementSibling;var evP3=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;
+    if(hint)hint.textContent='Included: '+incV3+' · $'+evP3+'/ea'+(ex3>0?' → $'+(ex3*evP3)+' charged month 2':'');
+  }
+  if(svVentsEl2){svVentsEl2.addEventListener('input',updateSvVents2);updateSvVents2();}
+  // Override save button to complete THIS scheduled visit
+  document.getElementById('ms-save').onclick=function(){
+    var g=function(id){var el=document.getElementById(id);return el?el.value:'';};
+    var extTotal2=currentExtras.reduce(function(s,e){return s+e.p;},0);
+    var svV2=parseInt(g('sv-vents'))||c.vents||10;
+    var svEv2=parseInt(g('sv-ev'))||0;
+    var ci2=clients.findIndex(function(x){return x.id===clientId;});
+    if(ci2>=0&&svV2!==clients[ci2].vents)clients[ci2].vents=svV2;
+    var b2bSetup2=typeof B2B_SETUP!=='undefined'&&B2B_SETUP[c.plan]!==undefined?B2B_SETUP[c.plan]:175;
+    var setup2=isFirst&&!isREplan?b2bSetup2:0;
+    var baseRate2=isREplan?(isFirst?199:49):c.rate;
+    var total2=baseRate2+extTotal2+(isREplan?0:setup2);
+    var newScent2=g('sv-scent-new')||c.scent||'';
+    if(newScent2&&ci2>=0)clients[ci2].scent=newScent2;
+    // Update the scheduled log → Completed
+    var li2=logs.findIndex(function(l){return l.id===logId;});
+    if(li2>=0){
+      logs[li2].status='Completed';
+      logs[li2].date=g('sv-d');logs[li2].time=g('sv-t');logs[li2].tech=g('sv-tech');
+      logs[li2].dur=g('sv-dur');logs[li2].f1=g('sv-f1');logs[li2].scent=g('sv-sc');
+      logs[li2].benef=g('sv-b');logs[li2].diff=g('sv-dif');logs[li2].rating=parseInt(g('sv-r'))||5;
+      logs[li2].notes=g('sv-n');logs[li2].vents=svV2;logs[li2].extraVents=svEv2;
+      logs[li2].extras=currentExtras.slice();logs[li2].extTotal=extTotal2;
+      logs[li2].setup=setup2;logs[li2].total=total2;
+      logs[li2].clientScent=newScent2;
+    }
+    // Update client next visit to next scheduled date
+    var nextSch=logs.filter(function(l){return l.clientId===clientId&&l.status==='Scheduled'&&l.date>g('sv-d');}).sort(function(a,b){return a.date.localeCompare(b.date);})[0];
+    if(ci2>=0&&nextSch)clients[ci2].next=nextSch.date;
+    // Inventory deductions
+    if(g('sv-f1')==='Yes'){var ft3=FT[c.plan]||'MERV 11';var fIdx=INV.findIndex(function(i){return i.n.includes(ft3);});if(fIdx>=0)INV[fIdx].stock=Math.max(0,INV[fIdx].stock-((c.f1q||1)+(c.f2q||0)));}
+    if(g('sv-sc')==='Yes'){var sIdx=INV.findIndex(function(i){return i.cat==='fragrance'&&i.n.includes('500ml');});if(sIdx>=0)INV[sIdx].stock=Math.max(0,INV[sIdx].stock-1);}
+    if(g('sv-b')==='Yes'){var bIdx=INV.findIndex(function(i){return i.n.includes('Benefect');});if(bIdx>=0)INV[bIdx].stock=Math.max(0,INV[bIdx].stock-0.1);}
+    save();
+    document.getElementById('mo-svc').classList.remove('on');
+    toast('✅ Visit completed!');
+    if(currentPage==='servicelog')renderPage();
+    if(currentPage==='route')buildRoute(document.getElementById('route-date')?document.getElementById('route-date').value:new Date().toISOString().split('T')[0]);
+    // Show receipt after completing
+    setTimeout(function(){openReceiptModal(clientId);},300);
+  };
+  document.getElementById('mo-svc').classList.add('on');
+}
+function renderLogPage(el){
+  el.innerHTML='<div class="ph"><div><h1>Service Log</h1><p>Scheduled &amp; completed visits</p></div></div>'
+    +'<div style="display:flex;gap:0;margin-bottom:1.5rem;border-bottom:2px solid #e2e8f0">'
+    +'<button id="slog-tab-date" onclick="switchLogTab(\'date\')" style="padding:10px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:3px solid var(--tl);color:var(--tl);margin-bottom:-2px">&#128197; By Date</button>'
+    +'<button id="slog-tab-client" onclick="switchLogTab(\'client\')" style="padding:10px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#888;margin-bottom:-2px">&#128100; By Client</button>'
+    +'</div>'
+    +'<div id="slog-content"></div>';
+  switchLogTab('date');
+}
+
+function switchLogTab(tab){
+  var tDate=document.getElementById('slog-tab-date');
+  var tClient=document.getElementById('slog-tab-client');
+  if(tDate){tDate.style.borderBottomColor=tab==='date'?'var(--tl)':'transparent';tDate.style.color=tab==='date'?'var(--tl)':'#888';}
+  if(tClient){tClient.style.borderBottomColor=tab==='client'?'var(--tl)':'transparent';tClient.style.color=tab==='client'?'var(--tl)':'#888';}
+  var el=document.getElementById('slog-content');if(!el)return;
+  if(tab==='date') renderLogByDate(el);
+  else renderLogByClient(el);
+}
+
+function renderLogByDate(el){
+  if(!logs.length){el.innerHTML='<div class="es"><div class="ei">&#128203;</div><h3>No visits yet</h3></div>';return;}
+  var today=new Date().toISOString().split('T')[0];
+  var dateMap={};
+  logs.forEach(function(log){if(!dateMap[log.date])dateMap[log.date]=[];dateMap[log.date].push(log);});
+  var dates=Object.keys(dateMap).sort();
+  var futureDates=dates.filter(function(d){return d>=today;});
+  var pastDates=dates.filter(function(d){return d<today;}).reverse();
+  el.innerHTML='';
+  function renderDateGroup(dateList,isUpcoming){
+    if(!dateList.length)return;
+    var hdr=document.createElement('div');
+    hdr.style.cssText='font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:'+(isUpcoming?'var(--tl)':'#64748b')+';padding:10px 0 8px;margin-top:'+(isUpcoming?'0':'20px');
+    hdr.textContent=isUpcoming?'Upcoming':'Past Visits';
+    el.appendChild(hdr);
+    dateList.forEach(function(ds){
+      var dayLogs=dateMap[ds];
+      var d=new Date(ds+'T12:00:00');
+      var isToday=ds===today;
+      var dHdr=document.createElement('div');
+      dHdr.style.cssText='background:'+(isToday?'var(--tl)':isUpcoming?'#f1f5f9':'var(--gy)')+';color:'+(isToday?'#fff':'var(--dk)')+';border-radius:8px;padding:8px 14px;margin-bottom:6px;font-size:13px;font-weight:600;display:flex;justify-content:space-between';
+      dHdr.innerHTML='<span>'+(isToday?'TODAY — ':'')+d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})+'</span><span style="font-size:12px;opacity:.7">'+dayLogs.length+' visit'+(dayLogs.length>1?'s':'')+'</span>';
+      el.appendChild(dHdr);
+      dayLogs.forEach(function(log){
+        var isScheduled=log.status==='Scheduled';
+        var tagColor=isScheduled?'#94a3b8':(log.plan==='Luxury Air'?'var(--gd)':log.plan==='Pure Living'?'var(--tl)':'var(--md)');
+        var card=document.createElement('div');
+        card.style.cssText='background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 4px rgba(31,58,95,.07);display:flex;justify-content:space-between;align-items:center;gap:10px;border-left:4px solid '+tagColor;
+        card.innerHTML='<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--dk)">'+log.clientName+' <span style="font-size:11px;color:#888;font-weight:400">'+log.clientId+'</span></div>'
+          +'<div style="font-size:12px;color:#888;margin-top:2px">'+log.plan+' | '+(log.time||'09:00')+(log.tech?' | '+log.tech:'')+'</div>'
+          +(isScheduled?'':'<div style="font-size:12px;color:var(--ok);margin-top:2px">$'+log.total+'</div>')+'</div>'
+          +'<div style="display:flex;gap:6px;flex-wrap:wrap" id="dlb-'+log.id+'"></div>';
+        var btnDiv=card.querySelector('#dlb-'+log.id);
+        if(isScheduled){
+          var bS2=document.createElement('button');bS2.style.cssText='padding:7px 12px;font-size:12px;background:var(--tl);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600';bS2.textContent='Start';
+          bS2.addEventListener('click',(function(lid,cid){return function(){openCompleteVisitModal(lid,cid);};})(log.id,log.clientId));
+          var bR2=document.createElement('button');bR2.style.cssText='padding:5px 8px;font-size:11px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer';bR2.textContent='Reschedule';
+          bR2.addEventListener('click',(function(lid,lds){return function(){var nd=prompt('New date (YYYY-MM-DD):',lds);if(!nd)return;var li=logs.findIndex(function(l){return l.id===lid;});if(li>=0){logs[li].date=nd;save();switchLogTab('date');toast('Rescheduled to '+nd);};};})(log.id,log.date));
+          var bDl3=document.createElement('button');bDl3.style.cssText='padding:5px 8px;font-size:11px;background:#FCEBEB;color:#A32D2D;border:1px solid #f7c1c1;border-radius:8px;cursor:pointer';bDl3.textContent='Del';
+          bDl3.addEventListener('click',(function(lid){return function(){if(!confirm('Remove this visit?'))return;logs=logs.filter(function(l){return l.id!==lid;});save();switchLogTab('date');toast('Deleted');};})(log.id));
+          btnDiv.appendChild(bS2);btnDiv.appendChild(bR2);btnDiv.appendChild(bDl3);
+        } else {
+          var bE2=document.createElement('button');bE2.style.cssText='padding:5px 8px;font-size:11px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer';bE2.textContent='Edit';
+          bE2.addEventListener('click',(function(lid){return function(){openEditSvcModal(lid);};})(log.id));
+          var bRc2=document.createElement('button');bRc2.style.cssText='padding:5px 8px;font-size:11px;background:#f0fdf4;color:var(--ok);border:1px solid #bbf7d0;border-radius:8px;cursor:pointer';bRc2.textContent='Receipt';
+          bRc2.addEventListener('click',(function(cid){return function(){openReceiptModal(cid);};})(log.clientId));
+          var bDl2=document.createElement('button');bDl2.style.cssText='padding:5px 8px;font-size:11px;background:#FCEBEB;color:#A32D2D;border:1px solid #f7c1c1;border-radius:8px;cursor:pointer';bDl2.textContent='Del';
+          bDl2.addEventListener('click',(function(lid){return function(){if(!confirm('Delete this log?'))return;logs=logs.filter(function(l){return l.id!==lid;});save();switchLogTab('date');toast('Deleted');};})(log.id));
+          btnDiv.appendChild(bE2);btnDiv.appendChild(bRc2);btnDiv.appendChild(bDl2);
+        }
+        el.appendChild(card);
+      });
+    });
+  }
+  renderDateGroup(futureDates,true);
+  renderDateGroup(pastDates,false);
+}
+
+function renderLogByClient(el){
+  var activeClients=clients.filter(function(c){return c.status==='Active';});
+  if(!activeClients.length){el.innerHTML='<div class="es"><div class="ei">&#128100;</div><h3>No active clients</h3></div>';return;}
+  el.innerHTML='<div style="background:#fff;border-radius:var(--r);padding:1rem 1.5rem;margin-bottom:1.5rem;box-shadow:0 2px 8px rgba(31,58,95,.07)">'
+    +'<label style="font-size:13px;font-weight:600;color:var(--dk);display:block;margin-bottom:6px">Select Client</label>'
+    +'<select id="slog-client-sel" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px">'
+    +'<option value="">-- choose a client --</option>'
+    +activeClients.map(function(c){
+      var total=logs.filter(function(l){return l.clientId===c.id;}).length;
+      var done=logs.filter(function(l){return l.clientId===c.id&&l.status!=='Scheduled';}).length;
+      return '<option value="'+c.id+'">'+c.name+' ('+c.plan+') -- '+done+'/'+total+' visits done</option>';
+    }).join('')+'</select></div>'
+    +'<div id="slog-client-detail"></div>';
+  document.getElementById('slog-client-sel').addEventListener('change',function(){
+    renderClientVisitList(this.value,document.getElementById('slog-client-detail'));
+  });
+}
+
+function renderClientVisitList(clientId,el){
+  if(!clientId){el.innerHTML='';return;}
+  var c=clients.find(function(x){return x.id===clientId;});if(!c){el.innerHTML='';return;}
+  var clientLogs=logs.filter(function(l){return l.clientId===clientId;}).sort(function(a,b){return a.date.localeCompare(b.date);});
+  var today=new Date().toISOString().split('T')[0];
+  var done=clientLogs.filter(function(l){return l.status!=='Scheduled';}).length;
+  el.innerHTML='<div style="background:var(--lt);border-radius:10px;padding:12px 16px;margin-bottom:1rem;font-size:13px">'
+    +'<strong>'+c.name+'</strong> | '+c.plan+' | $'+c.rate+'/mo | <span style="color:#888">'+done+' done / '+(clientLogs.length-done)+' upcoming</span></div>';
+  clientLogs.forEach(function(log){
+    var isScheduled=log.status==='Scheduled';
+    var isPast=log.date<today&&isScheduled;
+    var d=new Date(log.date+'T12:00:00');
+    var tagColor=isPast?'#ef4444':isScheduled?'#94a3b8':'var(--ok)';
+    var card=document.createElement('div');
+    card.style.cssText='background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 4px rgba(31,58,95,.07);display:flex;gap:12px;align-items:center;border-left:4px solid '+tagColor;
+    card.innerHTML='<div style="text-align:center;min-width:42px"><div style="font-size:16px;font-weight:700;color:var(--dk)">'+String(d.getDate()).padStart(2,'0')+'</div>'
+      +'<div style="font-size:10px;color:#888;text-transform:uppercase">'+d.toLocaleString('en',{month:'short'})+' '+d.getFullYear()+'</div></div>'
+      +'<div style="flex:1"><div style="font-size:13px;font-weight:600;color:'+tagColor+'">'+(isPast?'OVERDUE':isScheduled?'Scheduled':'Completed')+'</div>'
+      +'<div style="font-size:12px;color:#888">'+(log.time||'09:00')+(log.tech?' | '+log.tech:'')+'</div>'
+      +(isScheduled?'':'<div style="font-size:12px;color:#666;margin-top:2px">$'+log.total+'</div>')+'</div>'
+      +'<div style="display:flex;gap:5px" id="cvl-'+log.id+'"></div>';
+    var btnDiv=card.querySelector('#cvl-'+log.id);
+    if(isScheduled){
+      var bSt=document.createElement('button');bSt.style.cssText='padding:6px 10px;font-size:11px;background:var(--tl);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600';bSt.textContent='Start';
+      bSt.addEventListener('click',(function(lid,cid){return function(){openCompleteVisitModal(lid,cid);};})(log.id,log.clientId));
+      var bRs=document.createElement('button');bRs.style.cssText='padding:6px 8px;font-size:11px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer';bRs.textContent='Reschedule';
+      bRs.addEventListener('click',(function(lid,lds){return function(){var nd=prompt('New date (YYYY-MM-DD):',lds);if(!nd)return;var li=logs.findIndex(function(l){return l.id===lid;});if(li>=0){logs[li].date=nd;save();renderClientVisitList(clientId,el);toast('Rescheduled');};};})(log.id,log.date));
+      btnDiv.appendChild(bSt);btnDiv.appendChild(bRs);
+    } else {
+      var bRc=document.createElement('button');bRc.style.cssText='padding:6px 8px;font-size:11px;background:#f0fdf4;color:var(--ok);border:1px solid #bbf7d0;border-radius:8px;cursor:pointer';bRc.textContent='Receipt';
+      bRc.addEventListener('click',(function(cid){return function(){openReceiptModal(cid);};})(log.clientId));
+      btnDiv.appendChild(bRc);
+    }
+    el.appendChild(card);
+  });
+}
+
+function renderLogItems(){if(typeof currentPage!=='undefined'&&currentPage==='servicelog')renderPage();}
 
 function openEditSvcModal(logId){
   var log=logs.find(function(l){return l.id===logId;});if(!log)return;
@@ -769,42 +1124,83 @@ function renderLogItems(){
   var ll=document.getElementById('log-list');if(!ll)return;
   if(!logs.length){ll.innerHTML='<div class="es"><div class="ei">📋</div><h3>No visits yet</h3></div>';return;}
   ll.innerHTML='';
-  logs.forEach(function(log,logIdx){
-    var d=new Date(log.date+'T12:00:00');
-    var stars='⭐'.repeat(log.rating||5);
-    var tagColor=log.plan==='Luxury Air'?'var(--gd)':log.plan==='Pure Living'?'var(--tl)':'var(--md)';
-    var done=[log.f1==='Yes'?'✅ Filters changed':'',log.scent==='Yes'?'✅ Scent refilled':'',log.benef==='Yes'?'✅ Benefect applied':''].filter(Boolean).concat((log.extras||[]).map(function(e){return '➕ '+e.n+' $'+e.p;}));
-    var div=document.createElement('div');
-    div.style.cssText='background:#fff;border-radius:var(--r);padding:1.25rem 1.5rem;margin-bottom:12px;box-shadow:0 2px 8px rgba(31,58,95,.07);display:flex;gap:1.25rem';
-    div.innerHTML='<div style="background:'+tagColor+';color:#fff;border-radius:8px;padding:10px 12px;text-align:center;min-width:55px;flex-shrink:0">'
-      +'<div style="font-size:20px;font-weight:700;line-height:1">'+String(d.getDate()).padStart(2,'0')+'</div>'
-      +'<div style="font-size:10px;text-transform:uppercase">'+d.toLocaleString('en',{month:'short'})+'</div></div>'
-      +'<div style="flex:1">'
-      +'<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
-      +'<div><div style="font-size:15px;font-weight:600;color:var(--dk)">'+log.clientName+' — '+log.clientId+'</div>'
-      +'<div style="font-size:12px;color:#888">'+log.plan+' · '+log.time+' · '+log.tech+'</div></div>'
-      +'<div style="text-align:right"><div style="color:var(--gd);font-size:14px">'+stars+'</div>'
-      +'<div style="font-size:12px;color:#888">$'+log.total+'</div></div></div>'
-      +'<div style="background:var(--tll);border-radius:8px;padding:8px 12px;margin-bottom:8px">'+done.map(function(w){return '<div style="font-size:13px;color:#444;padding:1px 0">'+w+'</div>';}).join('')+'</div>'
-      +'<div style="display:flex;gap:6px" id="log-btns-'+log.id+'"></div>'
-      +'</div>';
-    // Add edit and delete buttons
-    var btnDiv=div.querySelector('#log-btns-'+log.id);
-    var bEdit=document.createElement('button');bEdit.className='btn bo bs';bEdit.textContent='✏️ Edit Notes';
-    var bDel=document.createElement('button');bDel.className='btn bs';bDel.style.cssText='padding:6px 12px;font-size:12px;background:#FCEBEB;color:#A32D2D;border:1px solid #f7c1c1;border-radius:8px;cursor:pointer';bDel.textContent='🗑️ Delete';
-    (function(id,idx){
-      bEdit.addEventListener('click',function(){
-        openEditSvcModal(id);
-      });
-      bDel.addEventListener('click',function(){
-        if(!confirm('Delete this visit log? This cannot be undone.'))return;
-        logs=logs.filter(function(l){return l.id!==id;});
-        save();renderLogItems();toast('🗑️ Visit deleted');
-      });
-    })(log.id,logIdx);
-    btnDiv.appendChild(bEdit);btnDiv.appendChild(bDel);
-    ll.appendChild(div);
-  });
+  var today=new Date().toISOString().split('T')[0];
+  // Separate scheduled vs completed/other
+  var scheduled=logs.filter(function(l){return l.status==='Scheduled';}).sort(function(a,b){return a.date.localeCompare(b.date);});
+  var completed=logs.filter(function(l){return l.status!=='Scheduled';}).sort(function(a,b){return b.date.localeCompare(a.date);});
+  function makeSection(title,items,isScheduled){
+    if(!items.length)return;
+    var hdr=document.createElement('div');
+    hdr.style.cssText='font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:'+(isScheduled?'var(--tl)':'var(--ok)')+';padding:10px 0 6px;margin-top:'+(isScheduled?'0':'16px');
+    hdr.textContent=(isScheduled?'📅 Upcoming Scheduled Visits ('+items.length+')':'✅ Completed Visits ('+items.length+')');
+    ll.appendChild(hdr);
+    items.forEach(function(log,logIdx){
+      var d=new Date(log.date+'T12:00:00');
+      var tagColor=isScheduled?'#94a3b8':(log.plan==='Luxury Air'?'var(--gd)':log.plan==='Pure Living'?'var(--tl)':'var(--md)');
+      var isToday=log.date===today;
+      var isFuture=log.date>today;
+      var done=isScheduled?[]:[log.f1==='Yes'?'✅ Filters changed':'',log.scent==='Yes'?'✅ Scent refilled':'',log.benef==='Yes'?'✅ Benefect applied':''].filter(Boolean).concat((log.extras||[]).map(function(e){return '➕ '+e.n+' $'+e.p;}));
+      var div=document.createElement('div');
+      div.style.cssText='background:'+(isScheduled?'#f8fafc':'#fff')+';border-radius:var(--r);padding:1.25rem 1.5rem;margin-bottom:10px;box-shadow:0 2px 8px rgba(31,58,95,.07);display:flex;gap:1.25rem;'+(isToday?'border:2px solid var(--tl);':'border:1px solid '+(isScheduled?'#e2e8f0':'transparent'));
+      div.innerHTML='<div style="background:'+tagColor+';color:#fff;border-radius:8px;padding:10px 12px;text-align:center;min-width:55px;flex-shrink:0">'
+        +'<div style="font-size:20px;font-weight:700;line-height:1">'+String(d.getDate()).padStart(2,'0')+'</div>'
+        +'<div style="font-size:10px;text-transform:uppercase">'+d.toLocaleString('en',{month:'short'})+'</div>'
+        +'<div style="font-size:10px;opacity:.8">'+d.getFullYear()+'</div></div>'
+        +'<div style="flex:1">'
+        +'<div style="display:flex;justify-content:space-between;margin-bottom:6px">'
+        +'<div><div style="font-size:15px;font-weight:600;color:var(--dk)">'+log.clientName+' <span style="font-size:11px;color:#888">'+log.clientId+'</span></div>'
+        +'<div style="font-size:12px;color:#888">'+log.plan+' · '+(log.time||'09:00')+(log.tech?' · '+log.tech:'')+'</div></div>'
+        +'<div style="text-align:right">'
+        +(isScheduled?'<span style="font-size:11px;background:'+(isToday?'var(--tl)':'#e2e8f0')+';color:'+(isToday?'#fff':'#64748b')+';padding:2px 8px;border-radius:10px">'+(isToday?'🔔 TODAY':'📅 Scheduled')+'</span>'
+          :'<div style="font-size:12px;color:#888;font-weight:600">$'+log.total+'</div>')
+        +'</div></div>'
+        +(done.length?'<div style="background:var(--tll);border-radius:8px;padding:8px 12px;margin-bottom:8px">'+done.map(function(w){return '<div style="font-size:13px;color:#444;padding:1px 0">'+w+'</div>';}).join('')+'</div>':'')
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap" id="log-btns-'+log.id+'"></div>'
+        +'</div>';
+      var btnDiv=div.querySelector('#log-btns-'+log.id);
+      if(isScheduled){
+        // Scheduled: Start Visit button + Reschedule + Delete
+        var bStart=document.createElement('button');
+        bStart.className='btn bp bs';bStart.style.fontSize='12px';
+        bStart.textContent='▶ Start Visit';
+        bStart.style.cssText='padding:7px 14px;font-size:12px;background:var(--tl);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600';
+        var bResched=document.createElement('button');bResched.className='btn bo bs';bResched.textContent='📅 Reschedule';
+        var bDel2=document.createElement('button');bDel2.className='btn bs';bDel2.style.cssText='padding:6px 12px;font-size:12px;background:#FCEBEB;color:#A32D2D;border:1px solid #f7c1c1;border-radius:8px;cursor:pointer';bDel2.textContent='🗑️';
+        (function(lid,cid2){
+          bStart.addEventListener('click',function(){openCompleteVisitModal(lid,cid2);});
+          bResched.addEventListener('click',function(){
+            var nd=prompt('New date (YYYY-MM-DD):',log.date);if(!nd)return;
+            var li2=logs.findIndex(function(l){return l.id===lid;});
+            if(li2>=0){logs[li2].date=nd;save();renderLogItems();toast('📅 Rescheduled to '+nd);}
+          });
+          bDel2.addEventListener('click',function(){
+            if(!confirm('Remove this scheduled visit?'))return;
+            logs=logs.filter(function(l){return l.id!==lid;});
+            save();renderLogItems();toast('🗑️ Visit removed');
+          });
+        })(log.id,log.clientId);
+        btnDiv.appendChild(bStart);btnDiv.appendChild(bResched);btnDiv.appendChild(bDel2);
+      } else {
+        // Completed: Edit notes + Receipt + Delete
+        var bEdit2=document.createElement('button');bEdit2.className='btn bo bs';bEdit2.textContent='✏️ Edit Notes';
+        var bRecLog=document.createElement('button');bRecLog.className='btn bg bs';bRecLog.textContent='🧾 Receipt';
+        var bDelC=document.createElement('button');bDelC.className='btn bs';bDelC.style.cssText='padding:6px 12px;font-size:12px;background:#FCEBEB;color:#A32D2D;border:1px solid #f7c1c1;border-radius:8px;cursor:pointer';bDelC.textContent='🗑️';
+        (function(lid,cid3){
+          bEdit2.addEventListener('click',function(){openEditSvcModal(lid);});
+          bRecLog.addEventListener('click',function(){openReceiptModal(cid3);});
+          bDelC.addEventListener('click',function(){
+            if(!confirm('Delete this visit log? This cannot be undone.'))return;
+            logs=logs.filter(function(l){return l.id!==lid;});
+            save();renderLogItems();toast('🗑️ Visit deleted');
+          });
+        })(log.id,log.clientId);
+        btnDiv.appendChild(bEdit2);btnDiv.appendChild(bRecLog);btnDiv.appendChild(bDelC);
+      }
+      ll.appendChild(div);
+    });
+  }
+  makeSection('Upcoming',scheduled,true);
+  makeSection('Completed',completed,false);
 }
 
 function openSvcModal(clientId){
@@ -974,7 +1370,6 @@ function openReceiptModal(id){
   var rnum='PPC-'+Date.now().toString().slice(-6);
   var incV=INC_V[c.plan]||10;
   var ev=Math.max(0,(c.vents||0)-incV);
-  // Declare plan-type flags early so all calculations below can use them
   var isRE=c.plan==='Real Estate';
   var isCP=c.plan==='Casa Piloto';
   var isCB=c.plan&&c.plan.includes('Construction');
@@ -982,26 +1377,67 @@ function openReceiptModal(id){
   var evPrice=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:(isB2Bplan?15:25);
   var evc=ev*evPrice;
   var ft=FT[c.plan]||'MERV 11';
+  // Separate evaluation logs from service logs
   var allLogs=logs.filter(function(l){return l.clientId===id;});
-  var lastLog=allLogs.length>0?allLogs[0]:null;
-  var isFirst=allLogs.length===0;
-  // For RE: check if the last log IS the first/oldest visit (same logic as portal)
-  var isFirstVisitLog=isRE&&lastLog&&(allLogs.indexOf(lastLog)===allLogs.length-1);
-  var isSecond=allLogs.length===1;
+  var serviceLogs=allLogs.filter(function(l){return l.status!=='Scheduled'&&l.visitType!=='evaluation';});
+  var evalLog=allLogs.find(function(l){return l.visitType==='evaluation';});
+  var lastLog=allLogs.length>0?allLogs[0]:null; // most recent any log
+  var lastServiceLog=serviceLogs.length>0?serviceLogs[0]:null; // most recent service
+  // Is the most recent completed log an evaluation? Show evaluation receipt instead
+  if(lastLog&&lastLog.visitType==='evaluation'&&serviceLogs.length===0){
+    // Only evaluation exists — show evaluation/contract receipt
+    var evalSetup=isRE?150:175;
+    var evalMonthly=isRE?49:0;
+    var evalTotal=isRE?(evalSetup+evalMonthly):evalSetup;
+    var evalDate=new Date(lastLog.date+'T12:00:00').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+    var rnum2='PPC-'+lastLog.id.slice(-6);
+    var nextSvc=allLogs.filter(function(l){return l.status==='Scheduled';}).sort(function(a,b){return a.date.localeCompare(b.date);})[0];
+    document.getElementById('mr-body').innerHTML=
+      '<div style="text-align:center;margin-bottom:1.25rem"><div style="font-size:20px;font-weight:700;color:var(--dk);font-family:Playfair Display,serif">PrecisionProCare</div>'
+      +'<div style="font-size:11px;color:#888">JLM Global Services LLC · 1617 Wake Dr, Wake Forest, NC 27587</div>'
+      +'<div style="font-size:11px;color:#888">(919) 398-0003 · service@precisionprocare.com</div></div>'
+      +'<div style="display:flex;justify-content:space-between;padding:.75rem 0;border-bottom:1px solid #f0f0f0">'
+      +'<div><div style="font-size:10px;color:#888;text-transform:uppercase">Receipt #</div><div style="font-weight:600">'+rnum2+'</div></div>'
+      +'<div style="text-align:right"><div style="font-size:10px;color:#888;text-transform:uppercase">Date</div><div style="font-weight:600">'+evalDate+'</div></div></div>'
+      +'<div style="background:var(--gy);border-radius:8px;padding:10px 14px;margin:.75rem 0">'
+      +'<div style="font-size:10px;color:#888;text-transform:uppercase;margin-bottom:5px">Bill To</div>'
+      +'<div style="font-weight:600">'+c.name+'</div>'
+      +'<div style="font-size:12px;color:#444">'+c.addr+'</div></div>'
+      +'<div style="background:#EAF3DE;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#3B6D11">'
+      +'<strong>📋 Plan: '+c.plan+' ('+c.size+')</strong> — $'+c.rate+'/mo<br>'
+      +'First service: <strong>'+(nextSvc?nextSvc.date:'TBD')+'</strong> @ '+(nextSvc?nextSvc.time:'TBD')+'</div>'
+      +'<table style="width:100%;border-collapse:collapse"><thead><tr style="background:var(--dk)">'
+      +'<th style="padding:8px 12px;text-align:left;color:#fff;font-size:11px">Description</th>'
+      +'<th style="padding:8px 12px;text-align:right;color:#fff;font-size:11px">Amount</th></tr></thead><tbody>'
+      +(isRE
+        ?'<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">Contract & Plan Activation — Setup Fee<br><span style="font-size:11px;color:#888">Plan registered · first service scheduled · diffuser reserved</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+evalSetup+'</td></tr>'
+        +'<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">First Month — '+c.plan+'<br><span style="font-size:11px;color:#888">Billed on contract date</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+evalMonthly+'</td></tr>'
+        :'<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">Contract & Plan Activation<br><span style="font-size:11px;color:#888">Plan registered · first service on '+(nextSvc?nextSvc.date:'TBD')+' · diffuser reserved</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+evalSetup+'</td></tr>')
+      +'<tr style="background:var(--tll)"><td style="padding:12px;font-weight:700;color:var(--tl);font-size:14px">TOTAL TODAY</td>'
+      +'<td style="padding:12px;text-align:right;font-weight:700;color:var(--tl);font-size:20px">$'+evalTotal+'</td></tr>'
+      +'</tbody></table>'
+      +'<div style="text-align:center;font-size:11px;color:var(--tl);margin-top:12px;padding:10px;background:var(--tll);border-radius:8px">'
+      +'✦ Thank you for choosing PrecisionProCare ✦<br>'
+      +'<span style="color:#888">First service: '+(nextSvc?nextSvc.date+' @ '+nextSvc.time:'TBD')+'</span></div>';
+    document.getElementById('mo-receipt').classList.add('on');
+    return; // stop here — don't show monthly receipt
+  }
+  // Regular service receipt — use last SERVICE log (skip evaluation)
+  var isFirst=serviceLogs.length===0;
+  var isFirstVisitLog=isRE&&lastServiceLog&&(serviceLogs.indexOf(lastServiceLog)===serviceLogs.length-1);
+  var isSecond=serviceLogs.length===1;
   // For Real Estate: first visit = $199 all-in ($150 setup + $49 monthly), subsequent = $49/mo
-  var reInstallPrice=199; // Fixed $199 first visit (all-in)
-  var reSetupFee=150;     // Setup portion = $150 (informational, shown in description)
+  var reInstallPrice=199;
+  var reSetupFee=150;
   var reMonthlyDisplay=49;
-  // Residential setup fee = $175; RE never shows separate setup line (all-in $199)
   var defaultSetup=isFirst&&!isB2Bplan?175:0;
-  var setup=isRE?0:(lastLog&&lastLog.setup>0?lastLog.setup:defaultSetup);
+  var setup=isRE?0:(lastServiceLog&&lastServiceLog.setup>0?lastServiceLog.setup:defaultSetup);
   var evScheduleText=EV_M[c.plan]||'month 2';
   var showEVPending=isFirst&&ev>0;
-  // Extra vents charged based on plan schedule
   var evTimes=EV_T[c.plan]||1;
-  var showEVCharged=!isFirst&&ev>0&&(isSecond||(allLogs.length%Math.round(12/evTimes)===1));
+  var showEVCharged=!isFirst&&ev>0&&(isSecond||(serviceLogs.length%Math.round(12/evTimes)===1));
   var evTotal=showEVCharged?evc:0;
-  var extItems=lastLog?lastLog.extras:[];
+  var extItems=lastServiceLog?lastServiceLog.extras:[];
   var extTotal=extItems.reduce(function(s,e){return s+e.p;},0);
   // Extra filters beyond included amount
   var fp2=FP[c.plan]||35;
@@ -1111,18 +1547,12 @@ function buildCalendar(yearOverride, monthOverride, selectedDate){
   var daysInMonth=new Date(year,month+1,0).getDate();
   var monthName=new Date(year,month,1).toLocaleString('en',{month:'long',year:'numeric'});
 
-  // Build visit map from client next dates (scheduled)
+  // Build visit map from Scheduled logs (future) and Completed logs (past)
   var visitMap={};
-  clients.filter(function(c){return c.status==='Active'&&c.next;}).forEach(function(c){
-    if(!visitMap[c.next])visitMap[c.next]=[];
-    visitMap[c.next].push({name:c.name,id:c.id,type:'scheduled',plan:c.plan});
-  });
-  // Also add completed visits from logs
   logs.forEach(function(log){
     if(!visitMap[log.date])visitMap[log.date]=[];
-    // Only add if not already in map
-    var exists=visitMap[log.date].find(function(v){return v.id===log.clientId;});
-    if(!exists)visitMap[log.date].push({name:log.clientName,id:log.clientId,type:'completed',plan:log.plan});
+    var exists=visitMap[log.date].find(function(v){return v.id===log.clientId&&v.type===log.status;});
+    if(!exists)visitMap[log.date].push({name:log.clientName,id:log.clientId,type:log.status,plan:log.plan});
   });
 
   var html='<div class="card"><div class="ct">📅 '+monthName+' — Visit Calendar</div>';
@@ -1192,22 +1622,24 @@ function buildRoute(dv){
   var el=document.getElementById('route-content');if(!el)return;
   var dateObj=new Date(dv+'T12:00:00');
   var dayName=dateObj.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-  // Get clients scheduled for this specific date
-  var list=clients.filter(function(c){return c.status==='Active'&&c.next===dv;});
-  // Also include clients with a log on this date
-  logs.filter(function(l){return l.date===dv;}).forEach(function(log){
-    var alreadyIn=list.find(function(c){return c.id===log.clientId;});
-    if(!alreadyIn){
+  // Get scheduled visits for this date from logs
+  var scheduledLogs=logs.filter(function(l){return l.status==='Scheduled'&&l.date===dv;});
+  // Also include completed visits on this date
+  var completedLogs=logs.filter(function(l){return l.status!=='Scheduled'&&l.date===dv;});
+  // Build unique client list from scheduled (priority) + completed
+  var seen={};
+  var list=[];
+  scheduledLogs.concat(completedLogs).forEach(function(log){
+    if(!seen[log.clientId]){
+      seen[log.clientId]=true;
       var c=clients.find(function(x){return x.id===log.clientId;});
-      if(c)list.push(c);
+      if(c)list.push({c:c,log:log,isScheduled:log.status==='Scheduled'});
     }
   });
-  // Fallback if no specific visits that day - show empty message
-  // (don't fall back to all clients - show only scheduled for that date)
-  list.sort(function(a,b){return (a.time||'09:00').localeCompare(b.time||'09:00');});
+  list.sort(function(a,b){return (a.c.time||'09:00').localeCompare(b.c.time||'09:00');});
   if(!list.length){el.innerHTML='<div class="es"><div class="ei">🗺️</div><h3>No visits for '+dayName+'</h3></div>';return;}
   var merv10=0,merv11=0,merv13=0,sc2=[],needB=false;
-  list.forEach(function(c){var f=FT[c.plan]||'MERV 10';if(f==='MERV 10')merv10+=(c.f1q||1)+(c.f2q||0);if(f==='MERV 11')merv11+=(c.f1q||1)+(c.f2q||0);if(f==='MERV 13')merv13+=(c.f1q||1)+(c.f2q||0);if(c.scent)sc2.push(c.scent);if(c.plan==='Luxury Air')needB=true;});
+  list.forEach(function(item){var c=item.c;var f=FT[c.plan]||'MERV 10';if(f==='MERV 10')merv10+=(c.f1q||1)+(c.f2q||0);if(f==='MERV 11')merv11+=(c.f1q||1)+(c.f2q||0);if(f==='MERV 13')merv13+=(c.f1q||1)+(c.f2q||0);if(c.scent)sc2.push(c.scent);if(c.plan==='Luxury Air')needB=true;});
   var usc=[...new Set(sc2)];
   el.innerHTML='<div style="background:var(--dk);color:#fff;border-radius:var(--r);padding:1.25rem 1.5rem;margin-bottom:1.5rem;display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:12px;opacity:.8">Schedule for</div><div style="font-size:18px;font-weight:600;font-family:Playfair Display,serif">'+dayName+'</div></div><div style="text-align:right"><div style="font-size:32px;font-weight:700">'+list.length+'</div><div style="font-size:11px;opacity:.8">visits</div></div></div>'
   +'<div class="card" style="margin-bottom:1.5rem"><div class="ct">🎒 Load in Van Today</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">'
@@ -1218,30 +1650,50 @@ function buildRoute(dv){
   +'<div style="background:'+(needB?'#FCEBEB':'var(--gy)')+';;border-radius:8px;padding:10px;text-align:center"><div style="font-size:20px">🧴</div><div style="font-weight:600;color:var(--dk);font-size:12px">'+(needB?'YES':'Not needed')+'</div><div style="font-size:11px;color:#888">Benefect</div></div>'
   +'</div></div>'
   +'<div style="font-family:Playfair Display,serif;font-size:18px;color:var(--dk);margin-bottom:1rem">📍 Visit Schedule</div>';
-  list.forEach(function(c,i){
+  list.forEach(function(item,i){
+    var c=item.c;var log=item.log;var isScheduled=item.isScheduled;
     var ft=FT[c.plan]||'MERV 10';var tf=(c.f1q||1)+(c.f2q||0);
     var cl=c.plan==='Luxury Air'?'lux':c.plan==='Pure Living'?'pur':'fre';
+    // Estimated duration by size
+    var estMin=c.size==='small'?120:c.size==='large'?180:150; // small=2h, medium=2.5h, large=3h
+    var estLabel=c.size==='small'?'~2 hrs':c.size==='large'?'~3 hrs':'~2.5 hrs';
+    // Calculate end time
+    var startT=log.time||c.time||'08:30';
+    var startParts=startT.split(':');
+    var endMins=parseInt(startParts[0])*60+parseInt(startParts[1])+estMin;
+    var endTime=String(Math.floor(endMins/60)).padStart(2,'0')+':'+String(endMins%60).padStart(2,'0');
     var div=document.createElement('div');div.className='rc '+cl;div.style.marginBottom='12px';
+    if(!isScheduled)div.style.opacity='0.7';
     div.innerHTML='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'
-      +'<div><div style="font-size:16px;font-weight:700;color:var(--dk)">'+(i+1)+'. '+c.name+'</div><div style="font-size:12px;color:#888">'+c.addr+'</div></div>'
-      +'<div style="text-align:right"><span class="pb '+(c.plan==='Pure Living'?'ppl':c.plan==='Luxury Air'?'pla':'pfh')+'">'+c.plan+'</span><div style="font-size:13px;font-weight:600;color:var(--dk);margin-top:4px">🕐 '+(c.time||'TBD')+'</div></div></div>'
+      +'<div><div style="font-size:16px;font-weight:700;color:var(--dk)">'+(i+1)+'. '+c.name
+      +(isScheduled?'':' <span style="font-size:11px;background:#EAF3DE;color:#3B6D11;padding:2px 6px;border-radius:8px">✅ Done</span>')+'</div>'
+      +'<div style="font-size:12px;color:#888">'+c.addr+'</div></div>'
+      +'<div style="text-align:right"><span class="pb '+(c.plan==='Pure Living'?'ppl':c.plan==='Luxury Air'?'pla':'pfh')+'">'+c.plan+'</span>'
+      +'<div style="font-size:13px;font-weight:600;color:var(--dk);margin-top:4px">🕐 '+(log.time||c.time||'08:30')+' → '+endTime+'</div>'
+      +'<div style="font-size:11px;color:#888">'+estLabel+' · '+(c.sqft?c.sqft+' sqft':c.size||'medium')+'</div></div></div>'
       +'<div style="background:var(--gy);border-radius:8px;padding:10px 12px;margin:8px 0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tl);margin-bottom:5px">🎒 Kit for this visit</div>'
-      +'<div style="font-size:13px;color:#444;padding:2px 0">• '+tf+'x '+ft+' filters ('+c.f1+(c.f2&&c.f2!=='N/A'?' + '+c.f2:'')+')</div>'
+      +'<div style="font-size:13px;color:#444;padding:2px 0">• '+tf+'x '+ft+' filters</div>'
       +'<div style="font-size:13px;color:#444;padding:2px 0">• Fragrance: <strong>'+c.scent+'</strong></div>'
-      +'<div style="font-size:13px;color:#444;padding:2px 0">• Diffuser '+c.diff+' — Serial: '+(c.ds1||'—')+'</div>'
+      +'<div style="font-size:13px;color:#444;padding:2px 0">• Diffuser — Serial: '+(c.ds1||'—')+'</div>'
       +(c.plan==='Luxury Air'?'<div style="font-size:13px;color:var(--er);padding:2px 0">• Benefect Decon 30 ✓</div>':'')+'</div>'
-      +'<div style="background:#FDF3E0;border-radius:8px;padding:10px 12px;border-left:3px solid var(--gd)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gd);margin-bottom:4px">💡 Dont forget to offer</div><div style="font-size:12px;color:#854F0B">🌀 Dryer vent $99 · 🔍 Inspection $79 · 🧫 Anti-mold from $149</div></div>'
+      +'<div style="background:#FDF3E0;border-radius:8px;padding:10px 12px;border-left:3px solid var(--gd)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gd);margin-bottom:4px">💡 Offer today</div><div style="font-size:12px;color:#854F0B">🌀 Dryer vent $99 · 🔍 Inspection $79 · 🧫 Anti-mold from $149</div></div>'
       +(c.access?'<div style="background:var(--lt);border-radius:6px;padding:6px 10px;margin-top:8px;font-size:12px">🔑 Access: <strong>'+c.access+'</strong>'+(c.pets?' · 🐾 '+c.pets:'')+'</div>':'');
-    // Route action buttons
-    var btns=document.createElement('div');btns.style.cssText='display:flex;gap:8px;margin-top:12px';
-    var bTime=document.createElement('button');bTime.className='btn bo bs';bTime.textContent='🕐 Change Time';
-    var bRec=document.createElement('button');bRec.className='btn bg bs';bRec.textContent='🧾 Receipt';
-    (function(id,name){
-      bTime.addEventListener('click',function(){var d=prompt('New date (YYYY-MM-DD):',c.next||'');if(d===null)return;var t=prompt('New time (HH:MM):',c.time||'09:00');if(t===null)return;var ci=clients.findIndex(function(x){return x.id===id;});if(ci>=0){clients[ci].next=d;clients[ci].time=t;}save();buildRoute(dv);toast('✅ Updated for '+name);});
-      bRec.addEventListener('click',function(){openReceiptModal(id);});
-    })(c.id,c.name);
-    btns.appendChild(bTime);btns.appendChild(bRec);div.appendChild(btns);
-    el.appendChild(div);
+    var btns=document.createElement('div');btns.style.cssText='display:flex;gap:8px;margin-top:12px;flex-wrap:wrap';
+    if(isScheduled){
+      var bComplete=document.createElement('button');
+      bComplete.style.cssText='padding:9px 18px;font-size:13px;background:var(--tl);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700';
+      bComplete.textContent='✅ Complete Visit';
+      bComplete.addEventListener('click',(function(lid,cid){return function(){openCompleteVisitModal(lid,cid);};})(log.id,c.id));
+      btns.appendChild(bComplete);
+    } else {
+      var bRecR=document.createElement('button');bRecR.className='btn bg bs';bRecR.textContent='🧾 Receipt';
+      bRecR.addEventListener('click',(function(cid){return function(){openReceiptModal(cid);};})(c.id));
+      btns.appendChild(bRecR);
+    }
+    var bTime=document.createElement('button');bTime.className='btn bo bs';bTime.textContent='🕐 Reschedule';
+    bTime.addEventListener('click',(function(lid){return function(){var d=prompt('New date (YYYY-MM-DD):',log.date);if(!d)return;var t=prompt('New time (HH:MM):',c.time||'09:00');if(!t)return;var li2=logs.findIndex(function(l){return l.id===lid;});if(li2>=0){logs[li2].date=d;logs[li2].time=t;}var ci2=clients.findIndex(function(x){return x.id===c.id;});if(ci2>=0)clients[ci2].time=t;save();buildRoute(dv);toast('✅ Rescheduled');};})(log.id));
+    btns.appendChild(bTime);
+    div.appendChild(btns);el.appendChild(div);
   });
 }
 
@@ -1260,7 +1712,7 @@ function buildPortal(id){
   var c=clients.find(function(x){return x.id===id;});if(!c)return;
   var ft=FT[c.plan]||'MERV 11';var cl=CLNS[c.plan]||1;
   var ini=c.name.split(' ').map(function(w){return w[0];}).join('').slice(0,2).toUpperCase();
-  var cLogs=logs.filter(function(l){return l.clientId===id;});
+  var cLogs=logs.filter(function(l){return l.clientId===id&&l.status!=='Scheduled';}).sort(function(a,b){return b.date.localeCompare(a.date);});
   el.innerHTML='<div class="ph2"><div class="pav">'+ini+'</div><div><h2 style="font-family:Playfair Display,serif;font-size:22px">'+c.name+'</h2><p style="font-size:13px;opacity:.8">'+c.addr+'</p><span class="ppb">✦ '+c.plan+' Plan</span></div></div>'
   +'<div class="nvc"><div style="width:46px;height:46px;background:rgba(255,255,255,.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📅</div>'
   +'<div><h3 style="font-size:13px;opacity:.85;margin-bottom:4px">Next visit</h3><p style="font-size:18px;font-weight:600">'+(c.next||'TBD')+(c.time?' at '+c.time:'')+'</p></div>'
@@ -1276,9 +1728,29 @@ function buildPortal(id){
   :cLogs.map(function(log){
     var d=new Date(log.date+'T12:00:00');
     var ds=d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-    var stars='★'.repeat(log.rating)+'☆'.repeat(5-log.rating);
-    var done=[log.f1==='Yes'?'✅ Filters changed':'',log.scent==='Yes'?'✅ Scent refilled — '+log.clientScent:'',log.benef==='Yes'?'✅ Benefect applied':''].filter(Boolean).concat((log.extras||[]).map(function(e){return '✅ '+e.n+' — $'+e.p;}));
-    return '<div class="pvc" style="border-left:4px solid '+(c.plan==='Luxury Air'?'var(--gd)':c.plan==='Pure Living'?'var(--tl)':'var(--md)')+'"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:700;color:var(--dk)">'+ds+(log.time?' at '+log.time:'')+'</div><div style="color:var(--gd);font-size:15px">'+stars+'</div></div>'
+    var isEval=log.visitType==='evaluation';
+    var stars=isEval?'':'★'.repeat(log.rating)+'☆'.repeat(5-(log.rating||5));
+    var borderColor=isEval?'#94a3b8':(c.plan==='Luxury Air'?'var(--gd)':c.plan==='Pure Living'?'var(--tl)':'var(--md)');
+    var done=isEval?[]:[log.f1==='Yes'?'✅ Filters changed':'',log.scent==='Yes'?'✅ Scent refilled — '+log.clientScent:'',log.benef==='Yes'?'✅ Benefect applied':''].filter(Boolean).concat((log.extras||[]).map(function(e){return '✅ '+e.n+' — $'+e.p;}));
+    // Evaluation log — show as contract card
+    if(isEval){
+      return '<div class="pvc" style="border-left:4px solid #94a3b8;background:#f8fafc">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+        +'<div><span style="background:#e2e8f0;color:#475569;font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;text-transform:uppercase">📋 Contract Signed</span>'
+        +'<div style="font-weight:700;color:var(--dk);margin-top:4px">'+ds+(log.time?' at '+log.time:'')+'</div></div>'
+        +'<div style="text-align:right;font-size:13px;font-weight:700;color:var(--dk)">$'+log.total+'</div></div>'
+        +'<div style="font-size:12px;color:#888;margin-bottom:8px">Plan activated: <strong>'+c.plan+' ('+c.size+')</strong> · $'+c.rate+'/mo</div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px">'
+        +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--dk);margin-bottom:8px">🧾 Contract Receipt</div>'
+        +(c.plan==='Real Estate'
+          ?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Setup Fee</span><span style="font-weight:600">$150</span></div>'
+           +'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">First Month</span><span style="font-weight:600">$49</span></div>'
+          :'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Setup Fee — Diffuser Installation</span><span style="font-weight:600">$'+log.setup+'</span></div>')
+        +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+log.total+'</span></div>'
+        +'</div></div>';
+    }
+    // Regular service log
+    return '<div class="pvc" style="border-left:4px solid '+borderColor+'"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:700;color:var(--dk)">'+ds+(log.time?' at '+log.time:'')+'</div><div style="color:var(--gd);font-size:15px">'+stars+'</div></div>'
     +'<div style="font-size:12px;color:#888;margin-bottom:10px">👨‍🔧 '+log.tech+' · ⏱️ '+(log.dur||'—')+' min · 💰 $'+log.total+'</div>'
     +'<div style="background:var(--tll);border-radius:8px;padding:10px 12px;margin-bottom:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--tl);margin-bottom:6px">Work Performed</div>'+done.map(function(w){return '<div style="font-size:13px;color:#444;padding:1px 0">'+w+'</div>';}).join('')+'</div>'
     +'<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#888;margin-bottom:6px">📷 Service Photos</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">'+['Before 1','Before 2','After 1','After 2'].map(function(lbl){return '<div style="aspect-ratio:1;background:var(--gy);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;color:#888;border:1px dashed #ccc"><span style="font-size:18px">📷</span>'+lbl+'</div>';}).join('')+'</div><div style="font-size:10px;color:#888;margin-top:4px;text-align:center">Photos will be available once database is connected</div></div>'
@@ -1287,9 +1759,9 @@ function buildPortal(id){
     +(function(){
       var isRE2=c.plan==='Real Estate';
       var isB2B2=c.plan==='Casa Piloto'||(c.plan&&c.plan.includes('Construction'));
-      var allL2=logs.filter(function(l){return l.clientId===c.id;});
+      var allL2=logs.filter(function(l){return l.clientId===c.id&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
       var logIdx2=allL2.indexOf(log);
-      var isFirstLog=(logIdx2===allL2.length-1); // oldest log = first visit
+      var isFirstLog=(logIdx2===allL2.length-1);
       if(isRE2){
         // RE first visit: show $199 all-in; subsequent: show $49
         var reAmt=isFirstLog?199:49;
@@ -1306,7 +1778,7 @@ function buildPortal(id){
     +(log.extras||[]).map(function(e){return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">+ '+e.n+'</span><span style="font-weight:600;color:var(--er)">$'+e.p+'</span></div>';}).join('')
     +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+(function(){
       // Recalculate total to ensure accuracy including extra vents
-      var allL3=logs.filter(function(l){return l.clientId===c.id;});
+      var allL3=logs.filter(function(l){return l.clientId===c.id&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
       var logIdx3=allL3.indexOf(log);
       var isFirstLog3=(logIdx3===allL3.length-1);
       var isSecondLog3=(logIdx3===allL3.length-2);
@@ -1360,7 +1832,7 @@ function attachPageEvents(){
     // Add print buttons after render
     var selId=this.value;
     setTimeout(function(){
-      var cLogs2=logs.filter(function(l){return l.clientId===selId;});
+      var cLogs2=logs.filter(function(l){return l.clientId===selId&&l.status!=='Scheduled';});
       cLogs2.forEach(function(log){
         var bc=document.getElementById('print-btn-'+log.id);
         if(bc){
@@ -1379,7 +1851,9 @@ function setupModalEvents(){
   // Client modal
   document.getElementById('mc-close').addEventListener('click',function(){document.getElementById('mo-client').classList.remove('on');clearLicense();});
   document.getElementById('mc-cancel').addEventListener('click',function(){document.getElementById('mo-client').classList.remove('on');clearLicense();});
-  document.getElementById('mc-save').addEventListener('click',saveClient);
+  document.getElementById('mc-save').addEventListener('click',function(){saveClient('schedule');});
+  var mcEval=document.getElementById('mc-save-eval');
+  if(mcEval)mcEval.addEventListener('click',function(){saveClient('eval');});
   // Service modal
   document.getElementById('ms-close').addEventListener('click',function(){document.getElementById('mo-svc').classList.remove('on');});
   document.getElementById('ms-cancel').addEventListener('click',function(){document.getElementById('mo-svc').classList.remove('on');});
