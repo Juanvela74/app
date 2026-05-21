@@ -188,6 +188,25 @@ var editingClientId=null;
 
 // ── STORAGE ───────────────────────────────────────────────────────────────
 function save(){try{localStorage.setItem('ppc_c',JSON.stringify(clients));localStorage.setItem('ppc_l',JSON.stringify(logs));}catch(e){}}
+
+// Calculate correct display amount for a completed log (fixes stale log.total)
+function logDisplayAmt(log){
+  if(!log||log.status==='Scheduled')return 0;
+  if(log.visitType==='evaluation'){
+    var c2=clients.find(function(x){return x.id===log.clientId;});
+    return c2&&c2.plan==='Real Estate'?199:175;
+  }
+  var c2=clients.find(function(x){return x.id===log.clientId;});
+  if(!c2)return log.total||0;
+  var hadEval=!!logs.find(function(l){return l.clientId===log.clientId&&l.visitType==='evaluation';});
+  var svcLogs=logs.filter(function(l){return l.clientId===log.clientId&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
+  var isFirst=svcLogs.indexOf(log)===svcLogs.length-1;
+  var isRE=c2.plan==='Real Estate';
+  var setup=isFirst&&!isRE&&!hadEval?175:0;
+  var base=isRE?(isFirst?199:49):(c2.rate+setup);
+  var extras=(log.extras||[]).reduce(function(s,e){return s+e.p;},0);
+  return base+extras;
+}
 function load(){
   try{
     var c=localStorage.getItem('ppc_c');
@@ -255,7 +274,7 @@ function renderDashHTML(){
   }).join('');
   return '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:1.5rem">'
     +'<div><h1 style="font-family:Playfair Display,serif;font-size:26px;color:var(--dk)">Good morning, Juan 👋</h1><p style="color:#888;font-size:13px">'+today+'</p></div>'
-    +'<div style="display:flex;gap:8px;align-items:center"><button class="btn bt bs" id="dash-refresh">🔄 Refresh</button><span style="background:var(--tll);border-radius:6px;padding:6px 12px;font-size:12px;color:var(--tl)">💾 Auto-saved</span></div>'
+    +'<div style="display:flex;gap:8px;align-items:center"><button class="btn bt bs" id="dash-refresh">🔄 Refresh</button><button class="btn bs" id="dash-reset" style="background:#FCEBEB;color:#A32D2D;border:1px solid #f7c1c1;padding:6px 12px;font-size:12px;border-radius:8px;cursor:pointer">🗑️ Reset Data</button><span style="background:var(--tll);border-radius:6px;padding:6px 12px;font-size:12px;color:var(--tl)">💾 Auto-saved</span></div>'
     +'</div>'
     +'<div class="stats">'
     +'<div class="sc b"><div class="sl">Active Clients</div><div class="sv">'+act.length+'</div><div class="ss">Recurring plans</div></div>'
@@ -1006,7 +1025,7 @@ function renderLogByDate(el){
         card.style.cssText='background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 4px rgba(31,58,95,.07);display:flex;justify-content:space-between;align-items:center;gap:10px;border-left:4px solid '+tagColor;
         card.innerHTML='<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--dk)">'+log.clientName+' <span style="font-size:11px;color:#888;font-weight:400">'+log.clientId+'</span></div>'
           +'<div style="font-size:12px;color:#888;margin-top:2px">'+log.plan+' | '+(log.time||'09:00')+(log.tech?' | '+log.tech:'')+'</div>'
-          +(isScheduled?'':'<div style="font-size:12px;color:var(--ok);margin-top:2px">$'+log.total+'</div>')+'</div>'
+          +(isScheduled?'':'<div style="font-size:12px;color:var(--ok);margin-top:2px">$'+logDisplayAmt(log)+'</div>')+'</div>'
           +'<div style="display:flex;gap:6px;flex-wrap:wrap" id="dlb-'+log.id+'"></div>';
         var btnDiv=card.querySelector('#dlb-'+log.id);
         if(isScheduled){
@@ -1071,7 +1090,7 @@ function renderClientVisitList(clientId,el){
       +'<div style="font-size:10px;color:#888;text-transform:uppercase">'+d.toLocaleString('en',{month:'short'})+' '+d.getFullYear()+'</div></div>'
       +'<div style="flex:1"><div style="font-size:13px;font-weight:600;color:'+tagColor+'">'+(isPast?'OVERDUE':isScheduled?'Scheduled':'Completed')+'</div>'
       +'<div style="font-size:12px;color:#888">'+(log.time||'09:00')+(log.tech?' | '+log.tech:'')+'</div>'
-      +(isScheduled?'':'<div style="font-size:12px;color:#666;margin-top:2px">$'+log.total+'</div>')+'</div>'
+      +(isScheduled?'':'<div style="font-size:12px;color:#666;margin-top:2px">$'+logDisplayAmt(log)+'</div>')+'</div>'
       +'<div style="display:flex;gap:5px" id="cvl-'+log.id+'"></div>';
     var btnDiv=card.querySelector('#cvl-'+log.id);
     if(isScheduled){
@@ -1170,7 +1189,7 @@ function renderLogItems(){
         +'<div style="font-size:12px;color:#888">'+log.plan+' · '+(log.time||'09:00')+(log.tech?' · '+log.tech:'')+'</div></div>'
         +'<div style="text-align:right">'
         +(isScheduled?'<span style="font-size:11px;background:'+(isToday?'var(--tl)':'#e2e8f0')+';color:'+(isToday?'#fff':'#64748b')+';padding:2px 8px;border-radius:10px">'+(isToday?'🔔 TODAY':'📅 Scheduled')+'</span>'
-          :'<div style="font-size:12px;color:#888;font-weight:600">$'+log.total+'</div>')
+          :'<div style="font-size:12px;color:#888;font-weight:600">$'+logDisplayAmt(log)+'</div>')
         +'</div></div>'
         +(done.length?'<div style="background:var(--tll);border-radius:8px;padding:8px 12px;margin-bottom:8px">'+done.map(function(w){return '<div style="font-size:13px;color:#444;padding:1px 0">'+w+'</div>';}).join('')+'</div>':'')
         +'<div style="display:flex;gap:6px;flex-wrap:wrap" id="log-btns-'+log.id+'"></div>'
@@ -1648,18 +1667,28 @@ function buildRoute(dv){
   var el=document.getElementById('route-content');if(!el)return;
   var dateObj=new Date(dv+'T12:00:00');
   var dayName=dateObj.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-  // Get scheduled visits for this date from logs (exclude evaluation logs from route)
+  // Get scheduled visits for this date (exclude evaluations - they show separately)
   var scheduledLogs=logs.filter(function(l){return l.status==='Scheduled'&&l.date===dv&&l.visitType!=='evaluation';});
-  // Also include completed SERVICE visits on this date (not evaluations)
+  // Completed service visits on this date
   var completedLogs=logs.filter(function(l){return l.status!=='Scheduled'&&l.date===dv&&l.visitType!=='evaluation';});
+  // Evaluation/contract visits on this date
+  var evalLogs=logs.filter(function(l){return l.date===dv&&l.visitType==='evaluation';});
   // Build unique client list from scheduled (priority) + completed
   var seen={};
   var list=[];
+  // Add eval/contract visits first
+  evalLogs.forEach(function(log){
+    if(!seen[log.clientId]){
+      seen[log.clientId]=true;
+      var c=clients.find(function(x){return x.id===log.clientId;});
+      if(c)list.push({c:c,log:log,isScheduled:false,isEval:true});
+    }
+  });
   scheduledLogs.concat(completedLogs).forEach(function(log){
     if(!seen[log.clientId]){
       seen[log.clientId]=true;
       var c=clients.find(function(x){return x.id===log.clientId;});
-      if(c)list.push({c:c,log:log,isScheduled:log.status==='Scheduled'});
+      if(c)list.push({c:c,log:log,isScheduled:log.status==='Scheduled',isEval:false});
     }
   });
   list.sort(function(a,b){return (a.c.time||'09:00').localeCompare(b.c.time||'09:00');});
@@ -1677,35 +1706,40 @@ function buildRoute(dv){
   +'</div></div>'
   +'<div style="font-family:Playfair Display,serif;font-size:18px;color:var(--dk);margin-bottom:1rem">📍 Visit Schedule</div>';
   list.forEach(function(item,i){
-    var c=item.c;var log=item.log;var isScheduled=item.isScheduled;
+    var c=item.c;var log=item.log;var isScheduled=item.isScheduled;var isEval=item.isEval||false;
     var ft=FT[c.plan]||'MERV 10';var tf=(c.f1q||1)+(c.f2q||0);
     var cl=c.plan==='Luxury Air'?'lux':c.plan==='Pure Living'?'pur':'fre';
-    // Estimated duration by size
-    var estMin=c.size==='small'?120:c.size==='large'?180:150; // small=2h, medium=2.5h, large=3h
-    var estLabel=c.size==='small'?'~2 hrs':c.size==='large'?'~3 hrs':'~2.5 hrs';
-    // Calculate end time
+    var estMin=c.size==='small'?120:c.size==='large'?180:150;
+    var estLabel=isEval?'~30 min':(c.size==='small'?'~2 hrs':c.size==='large'?'~3 hrs':'~2.5 hrs');
     var startT=log.time||c.time||'08:30';
     var startParts=startT.split(':');
-    var endMins=parseInt(startParts[0])*60+parseInt(startParts[1])+estMin;
+    var endMins=parseInt(startParts[0])*60+parseInt(startParts[1])+(isEval?30:estMin);
     var endTime=String(Math.floor(endMins/60)).padStart(2,'0')+':'+String(endMins%60).padStart(2,'0');
     var div=document.createElement('div');div.className='rc '+cl;div.style.marginBottom='12px';
-    if(!isScheduled)div.style.opacity='0.7';
+    if(!isScheduled&&!isEval)div.style.opacity='0.7';
     div.innerHTML='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'
       +'<div><div style="font-size:16px;font-weight:700;color:var(--dk)">'+(i+1)+'. '+c.name
-      +(isScheduled?'':' <span style="font-size:11px;background:#EAF3DE;color:#3B6D11;padding:2px 6px;border-radius:8px">✅ Done</span>')+'</div>'
+      +(isEval?' <span style="font-size:11px;background:#e2e8f0;color:#475569;padding:2px 8px;border-radius:8px">📋 Contract</span>':'')
+      +(!isScheduled&&!isEval?' <span style="font-size:11px;background:#EAF3DE;color:#3B6D11;padding:2px 6px;border-radius:8px">✅ Done</span>':'')+'</div>'
       +'<div style="font-size:12px;color:#888">'+c.addr+'</div></div>'
       +'<div style="text-align:right"><span class="pb '+(c.plan==='Pure Living'?'ppl':c.plan==='Luxury Air'?'pla':'pfh')+'">'+c.plan+'</span>'
       +'<div style="font-size:13px;font-weight:600;color:var(--dk);margin-top:4px">🕐 '+(log.time||c.time||'08:30')+' → '+endTime+'</div>'
-      +'<div style="font-size:11px;color:#888">'+estLabel+' · '+(c.sqft?c.sqft+' sqft':c.size||'medium')+'</div></div></div>'
-      +'<div style="background:var(--gy);border-radius:8px;padding:10px 12px;margin:8px 0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tl);margin-bottom:5px">🎒 Kit for this visit</div>'
-      +'<div style="font-size:13px;color:#444;padding:2px 0">• '+tf+'x '+ft+' filters</div>'
-      +'<div style="font-size:13px;color:#444;padding:2px 0">• Fragrance: <strong>'+c.scent+'</strong></div>'
-      +'<div style="font-size:13px;color:#444;padding:2px 0">• Diffuser — Serial: '+(c.ds1||'—')+'</div>'
-      +(c.plan==='Luxury Air'?'<div style="font-size:13px;color:var(--er);padding:2px 0">• Benefect Decon 30 ✓</div>':'')+'</div>'
-      +(isScheduled?'<div style="background:#FDF3E0;border-radius:8px;padding:10px 12px;border-left:3px solid var(--gd)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gd);margin-bottom:4px">💡 Offer today</div><div style="font-size:12px;color:#854F0B">🌀 Dryer vent $99 · 🔍 Inspection $79 · 🧫 Anti-mold from $149</div></div>':'')
+      +'<div style="font-size:11px;color:#888">'+estLabel+(isEval?' · Contract signing':'')+'</div></div></div>'
+      +(isEval
+        ?'<div style="background:#f1f5f9;border-radius:8px;padding:10px 12px;margin:8px 0;font-size:13px;color:#475569">📋 Contract visit — sign agreement · collect $175 setup fee · reserve diffuser</div>'
+        :'<div style="background:var(--gy);border-radius:8px;padding:10px 12px;margin:8px 0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tl);margin-bottom:5px">🎒 Kit for this visit</div>'
+        +'<div style="font-size:13px;color:#444;padding:2px 0">• '+tf+'x '+ft+' filters</div>'
+        +'<div style="font-size:13px;color:#444;padding:2px 0">• Fragrance: <strong>'+c.scent+'</strong></div>'
+        +'<div style="font-size:13px;color:#444;padding:2px 0">• Diffuser — Serial: '+(c.ds1||'—')+'</div>'
+        +(c.plan==='Luxury Air'?'<div style="font-size:13px;color:var(--er);padding:2px 0">• Benefect Decon 30 ✓</div>':'')+'</div>'
+        +(isScheduled?'<div style="background:#FDF3E0;border-radius:8px;padding:10px 12px;border-left:3px solid var(--gd)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gd);margin-bottom:4px">💡 Offer today</div><div style="font-size:12px;color:#854F0B">🌀 Dryer vent $99 · 🔍 Inspection $79 · 🧫 Anti-mold from $149</div></div>':''))
       +(c.access?'<div style="background:var(--lt);border-radius:6px;padding:6px 10px;margin-top:8px;font-size:12px">🔑 Access: <strong>'+c.access+'</strong>'+(c.pets?' · 🐾 '+c.pets:'')+'</div>':'');
     var btns=document.createElement('div');btns.style.cssText='display:flex;gap:8px;margin-top:12px;flex-wrap:wrap';
-    if(isScheduled){
+    if(isEval){
+      var bRecEval=document.createElement('button');bRecEval.style.cssText='padding:9px 18px;font-size:13px;background:#64748b;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600';bRecEval.textContent='🧾 Contract Receipt';
+      bRecEval.addEventListener('click',(function(lid,cid){return function(){openLogReceipt(lid,cid);};})(log.id,c.id));
+      btns.appendChild(bRecEval);
+    } else if(isScheduled){
       var bComplete=document.createElement('button');
       bComplete.style.cssText='padding:9px 18px;font-size:13px;background:var(--tl);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700';
       bComplete.textContent='✅ Complete Visit';
@@ -1777,12 +1811,12 @@ function buildPortal(id){
           ?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Setup Fee</span><span style="font-weight:600">$150</span></div>'
            +'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">First Month</span><span style="font-weight:600">$49</span></div>'
           :'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Setup Fee — Diffuser Installation</span><span style="font-weight:600">$'+log.setup+'</span></div>')
-        +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+log.total+'</span></div>'
+        +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+logDisplayAmt(log)+'</span></div>'
         +'</div></div>';
     }
     // Regular service log
     return '<div class="pvc" style="border-left:4px solid '+borderColor+'"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:700;color:var(--dk)">'+ds+(log.time?' at '+log.time:'')+'</div><div style="color:var(--gd);font-size:15px">'+stars+'</div></div>'
-    +'<div style="font-size:12px;color:#888;margin-bottom:10px">👨‍🔧 '+log.tech+' · ⏱️ '+(log.dur||'—')+' min · 💰 $'+log.total+'</div>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:10px">👨‍🔧 '+log.tech+' · ⏱️ '+(log.dur||'—')+' min · 💰 $'+logDisplayAmt(log)+'</div>'
     +'<div style="background:var(--tll);border-radius:8px;padding:10px 12px;margin-bottom:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--tl);margin-bottom:6px">Work Performed</div>'+done.map(function(w){return '<div style="font-size:13px;color:#444;padding:1px 0">'+w+'</div>';}).join('')+'</div>'
     +'<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#888;margin-bottom:6px">📷 Service Photos</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">'+['Before 1','Before 2','After 1','After 2'].map(function(lbl){return '<div style="aspect-ratio:1;background:var(--gy);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;color:#888;border:1px dashed #ccc"><span style="font-size:18px">📷</span>'+lbl+'</div>';}).join('')+'</div><div style="font-size:10px;color:#888;margin-top:4px;text-align:center">Photos will be available once database is connected</div></div>'
     +'<div style="background:#fff;border:1px solid #f0f0f0;border-radius:8px;padding:10px 14px">'
@@ -1852,6 +1886,16 @@ function attachPageEvents(){
   // Dashboard
   var dr=document.getElementById('dash-refresh');
   if(dr)dr.addEventListener('click',function(){load();goPage('dashboard');toast('✅ Refreshed!');});
+  var dreset=document.getElementById('dash-reset');
+  if(dreset)dreset.addEventListener('click',function(){
+    var confirm1=prompt('⚠️ This will DELETE all clients and visits.\n\nType RESET to confirm:');
+    if(!confirm1||confirm1.trim().toUpperCase()!=='RESET'){toast('❌ Cancelled');return;}
+    localStorage.removeItem('ppc_c');
+    localStorage.removeItem('ppc_l');
+    clients=[];logs=[];
+    save();goPage('dashboard');
+    toast('✅ All data cleared. Start fresh!');
+  });
   // Clients
   var bnc=document.getElementById('btn-new-client');
   if(bnc)bnc.addEventListener('click',openNewClient);
