@@ -1441,26 +1441,26 @@ function openReceiptModal(id){
   var isFirst=serviceLogs.length===0;
   var isFirstVisitLog=isRE&&lastServiceLog&&(serviceLogs.indexOf(lastServiceLog)===serviceLogs.length-1);
   var isSecond=serviceLogs.length===1;
-  // For Real Estate: first visit = $199 all-in ($150 setup + $49 monthly), subsequent = $49/mo
-  var reInstallPrice=199;
-  var reSetupFee=150;
-  var reMonthlyDisplay=49;
-  var defaultSetup=isFirst&&!isB2Bplan?175:0;
-  var setup=isRE?0:(lastServiceLog&&lastServiceLog.setup>0?lastServiceLog.setup:defaultSetup);
+  // If client had an evaluation, setup already charged — never charge again
+  var hadEval=!!evalLog;
+  var reInstallPrice=199;var reSetupFee=150;var reMonthlyDisplay=49;
+  var defaultSetup=isFirst&&!isB2Bplan&&!hadEval?175:0;
+  var setup=isRE?0:(lastServiceLog&&lastServiceLog.setup>0&&!hadEval?lastServiceLog.setup:defaultSetup);
   var evScheduleText=EV_M[c.plan]||'month 2';
+  // Extra vents: ALWAYS Pending on first service visit (charged visit 2)
   var showEVPending=isFirst&&ev>0;
   var evTimes=EV_T[c.plan]||1;
   var showEVCharged=!isFirst&&ev>0&&(isSecond||(serviceLogs.length%Math.round(12/evTimes)===1));
   var evTotal=showEVCharged?evc:0;
   var extItems=lastServiceLog?lastServiceLog.extras:[];
   var extTotal=extItems.reduce(function(s,e){return s+e.p;},0);
-  // Extra filters beyond included amount
   var fp2=FP[c.plan]||35;
   var tf2=(c.f1q||1)+(c.f2q||0);
-  var includedF=c.units==='2'?4:2; // 2 per HVAC system
+  var includedF=c.units==='2'?4:2;
   var ef2=Math.max(0,tf2-includedF);
   var efc2=ef2*fp2;
-  // Grand total: RE first visit = $199 flat + extras only; RE monthly = $49 + extras only
+  // Use actual log date for receipt
+  var receiptDate=lastServiceLog?new Date(lastServiceLog.date+'T12:00:00').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}):new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
   var reIsFirstVisit=isRE?(isFirst||isFirstVisitLog):false;
   var grandBase=isRE?(reIsFirstVisit?reInstallPrice:reMonthlyDisplay):c.rate;
   var grand=grandBase+evTotal+(isB2Bplan?0:setup)+extTotal+efc2;
@@ -1472,18 +1472,18 @@ function openReceiptModal(id){
                             'Showing day service · diffuser active on showing days'):
               isCP?'Monthly pilot home service · fragrance + filter + report':
               isCB?'Post-construction deep clean + disinfection + dust removal':
-              'Duct cleaning + scent + '+ft+' filters · '+incV+' vents included';
+              'Duct cleaning & sanitization · scent refill · '+ft+' filters · '+incV+' vents included';
   var svcLabel=isRE?'Real Estate Service':(isCB?'Construction Cleaning':('Monthly Service — '+c.plan));
   var rows='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">'+(svcLabel2||svcLabel)+'<br><span style="font-size:11px;color:#888">'+svcDesc+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+(svcAmt||c.rate)+'</td></tr>';
-  // Setup fee line: only for residential (not RE — included in $199)
-  if(setup>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:var(--lt)"><td style="padding:10px 12px;font-size:13px">Setup fee — diffuser + air sensor<br><span style="font-size:11px;color:var(--md)">One-time · first visit only</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--dk)">$'+setup+'</td></tr>';
+  // Setup fee: only if not pre-charged via evaluation
+  if(setup>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:var(--lt)"><td style="padding:10px 12px;font-size:13px">Contract & Plan Activation<br><span style="font-size:11px;color:var(--md)">One-time · first visit only</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--dk)">$'+setup+'</td></tr>';
   if(showEVPending)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#F5FFF5"><td style="padding:10px 12px;font-size:13px">Extra vents ('+ev+'×$'+evPrice+' = $'+evc+')<br><span style="font-size:11px;color:var(--ok)">⚡ Will be charged on next visit (month 2)</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--ok)">Pending</td></tr>';
   if(showEVCharged)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#FFFBF0"><td style="padding:10px 12px;font-size:13px">Extra vents ('+ev+'×$'+evPrice+')<br><span style="font-size:11px;color:var(--gd)">Scheduled: '+evScheduleText+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--gd)">$'+evc+'</td></tr>';
   extItems.forEach(function(e){rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#FFF8F0"><td style="padding:10px 12px;font-size:13px">+ '+e.n+'</td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--er)">$'+e.p+'</td></tr>';});
   if(efc2>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:var(--tll)"><td style="padding:10px 12px;font-size:13px">Extra filters ('+ef2+'×$'+fp2+')<br><span style="font-size:11px;color:var(--tl)">Beyond 2 included in plan</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--tl)">$'+efc2+'</td></tr>';
   rows+='<tr style="background:var(--tll)"><td style="padding:12px;font-weight:700;color:var(--tl);font-size:14px">TOTAL THIS VISIT</td><td style="padding:12px;text-align:right;font-weight:700;color:var(--tl);font-size:20px">$'+grand+'</td></tr>';
   document.getElementById('mr-body').innerHTML='<div style="text-align:center;margin-bottom:1.25rem"><div style="font-size:20px;font-weight:700;color:var(--dk);font-family:Playfair Display,serif">PrecisionProCare</div><div style="font-size:11px;color:#888">JLM Global Services LLC · 1617 Wake Dr, Wake Forest, NC 27587</div><div style="font-size:11px;color:#888">(919) 398-0003 · service@precisionprocare.com</div></div>'
-    +'<div style="display:flex;justify-content:space-between;padding:.75rem 0;border-bottom:1px solid #f0f0f0"><div><div style="font-size:10px;color:#888;text-transform:uppercase">Receipt #</div><div style="font-weight:600">'+rnum+'</div></div><div style="text-align:right"><div style="font-size:10px;color:#888;text-transform:uppercase">Date</div><div style="font-weight:600">'+today+'</div></div></div>'
+    +'<div style="display:flex;justify-content:space-between;padding:.75rem 0;border-bottom:1px solid #f0f0f0"><div><div style="font-size:10px;color:#888;text-transform:uppercase">Receipt #</div><div style="font-weight:600">'+rnum+'</div></div><div style="text-align:right"><div style="font-size:10px;color:#888;text-transform:uppercase">Date</div><div style="font-weight:600">'+receiptDate+'</div></div></div>'
     +'<div style="background:var(--gy);border-radius:8px;padding:10px 14px;margin:.75rem 0"><div style="font-size:10px;color:#888;text-transform:uppercase;margin-bottom:5px">Bill To</div><div style="font-weight:600">'+c.name+'</div><div style="font-size:12px;color:#444">'+c.addr+'</div><div style="font-size:12px;color:#444">'+c.phone+'</div></div>'
     +'<table style="width:100%;border-collapse:collapse"><thead><tr style="background:var(--dk)"><th style="padding:8px 12px;text-align:left;color:#fff;font-size:11px">Service</th><th style="padding:8px 12px;text-align:right;color:#fff;font-size:11px">Amount</th></tr></thead><tbody>'+rows+'</tbody></table>'
     +'<div style="text-align:center;font-size:11px;color:var(--tl);margin-top:12px;padding:10px;background:var(--tll);border-radius:8px">✦ Thank you for choosing PrecisionProCare ✦<br><span style="color:#888">Scent: '+(c.scent||'—')+' · Next visit: '+(c.next||'TBD')+(c.time?' @ '+c.time:'')+'</span></div>';
@@ -1686,12 +1686,12 @@ function buildRoute(dv){
       +'<div style="text-align:right"><span class="pb '+(c.plan==='Pure Living'?'ppl':c.plan==='Luxury Air'?'pla':'pfh')+'">'+c.plan+'</span>'
       +'<div style="font-size:13px;font-weight:600;color:var(--dk);margin-top:4px">🕐 '+(log.time||c.time||'08:30')+' → '+endTime+'</div>'
       +'<div style="font-size:11px;color:#888">'+estLabel+' · '+(c.sqft?c.sqft+' sqft':c.size||'medium')+'</div></div></div>'
-      +'<div style="background:var(--gy);border-radius:8px;padding:10px 12px;margin:8px 0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tl);margin-bottom:5px">🎒 Kit for this visit</div>'
+      +'<div style="background:var(--gy);border-radius:8px;padding:10px 12px;margin:8px 0'+(isScheduled?'':';display:none')+'"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tl);margin-bottom:5px">🎒 Kit for this visit</div>'
       +'<div style="font-size:13px;color:#444;padding:2px 0">• '+tf+'x '+ft+' filters</div>'
       +'<div style="font-size:13px;color:#444;padding:2px 0">• Fragrance: <strong>'+c.scent+'</strong></div>'
       +'<div style="font-size:13px;color:#444;padding:2px 0">• Diffuser — Serial: '+(c.ds1||'—')+'</div>'
       +(c.plan==='Luxury Air'?'<div style="font-size:13px;color:var(--er);padding:2px 0">• Benefect Decon 30 ✓</div>':'')+'</div>'
-      +'<div style="background:#FDF3E0;border-radius:8px;padding:10px 12px;border-left:3px solid var(--gd)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gd);margin-bottom:4px">💡 Offer today</div><div style="font-size:12px;color:#854F0B">🌀 Dryer vent $99 · 🔍 Inspection $79 · 🧫 Anti-mold from $149</div></div>'
+      +'<div style="background:#FDF3E0;border-radius:8px;padding:10px 12px;border-left:3px solid var(--gd)'+(isScheduled?'':';display:none')+'"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gd);margin-bottom:4px">💡 Offer today</div><div style="font-size:12px;color:#854F0B">🌀 Dryer vent $99 · 🔍 Inspection $79 · 🧫 Anti-mold from $149</div></div>'
       +(c.access?'<div style="background:var(--lt);border-radius:6px;padding:6px 10px;margin-top:8px;font-size:12px">🔑 Access: <strong>'+c.access+'</strong>'+(c.pets?' · 🐾 '+c.pets:'')+'</div>':'');
     var btns=document.createElement('div');btns.style.cssText='display:flex;gap:8px;margin-top:12px;flex-wrap:wrap';
     if(isScheduled){
@@ -1746,7 +1746,12 @@ function buildPortal(id){
     var isEval=log.visitType==='evaluation';
     var stars=isEval?'':'★'.repeat(log.rating)+'☆'.repeat(5-(log.rating||5));
     var borderColor=isEval?'#94a3b8':(c.plan==='Luxury Air'?'var(--gd)':c.plan==='Pure Living'?'var(--tl)':'var(--md)');
-    var done=isEval?[]:[log.f1==='Yes'?'✅ Filters changed':'',log.scent==='Yes'?'✅ Scent refilled — '+log.clientScent:'',log.benef==='Yes'?'✅ Benefect applied':''].filter(Boolean).concat((log.extras||[]).map(function(e){return '✅ '+e.n+' — $'+e.p;}));
+    var done=isEval?[]:[
+      '✅ Duct cleaning & sanitization',
+      log.f1==='Yes'?'✅ Filters changed':'',
+      log.scent==='Yes'?'✅ Scent refilled — '+log.clientScent:'',
+      log.benef==='Yes'?'✅ Benefect applied':''
+    ].filter(Boolean).concat((log.extras||[]).map(function(e){return '✅ '+e.n+' — $'+e.p;}));
     // Evaluation log — show as contract card
     if(isEval){
       return '<div class="pvc" style="border-left:4px solid #94a3b8;background:#f8fafc">'
@@ -1787,20 +1792,23 @@ function buildPortal(id){
       var portalAmt=c.rate;
       return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">'+portalLabel+'</span><span style="font-weight:600">$'+portalAmt+'</span></div>';
     })()
-    +(c.plan!=='Real Estate'&&log.setup>0?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Setup fee (one-time)</span><span style="font-weight:600;color:var(--dk)">$'+log.setup+'</span></div>':'')
-    +((function(){var incV2=INC_V[c.plan]||10;var ev2=Math.max(0,(c.vents||0)-incV2);var evPrice2=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;var evc2=ev2*evPrice2;var allL=logs.filter(function(l){return l.clientId===c.id;});var isFirst2=allL.indexOf(log)===allL.length-1;var isSecond2=allL.indexOf(log)===allL.length-2;if(isFirst2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--ok)">⚡ Extra vents ('+ev2+'×$'+evPrice2+') — charged month 2</span><span style="font-weight:600;color:var(--ok)">Pending</span></div>';if(isSecond2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--gd)">Extra vents ('+ev2+'×$'+evPrice2+')</span><span style="font-weight:600;color:var(--gd)">$'+evc2+'</span></div>';return '';})())
+    +(c.plan!=='Real Estate'&&log.setup>0&&!logs.find(function(l){return l.clientId===c.id&&l.visitType==='evaluation';})?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Contract & Plan Activation</span><span style="font-weight:600;color:var(--dk)">$'+log.setup+'</span></div>':'')
+    +((function(){var incV2=INC_V[c.plan]||10;var ev2=Math.max(0,(c.vents||0)-incV2);var evPrice2=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;var evc2=ev2*evPrice2;var svcL=logs.filter(function(l){return l.clientId===c.id&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});var isFirst2=svcL.indexOf(log)===svcL.length-1;var isSecond2=svcL.indexOf(log)===svcL.length-2;if(isFirst2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--ok)">⚡ Extra vents ('+ev2+'×$'+evPrice2+') — charged visit 2</span><span style="font-weight:600;color:var(--ok)">Pending</span></div>';if(isSecond2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--gd)">Extra vents ('+ev2+'×$'+evPrice2+')</span><span style="font-weight:600;color:var(--gd)">$'+evc2+'</span></div>';return '';})())
     +((function(){var fp3=FP[c.plan]||35;var tf3=(c.f1q||1)+(c.f2q||0);var ef3=Math.max(0,tf3-2);var efc3=ef3*fp3;return efc3>0?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--tl)">Extra filters ('+ef3+'×$'+fp3+')</span><span style="font-weight:600;color:var(--tl)">$'+efc3+'</span></div>':'';})())
     +(log.extras||[]).map(function(e){return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">+ '+e.n+'</span><span style="font-weight:600;color:var(--er)">$'+e.p+'</span></div>';}).join('')
     +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+(function(){
-      // Recalculate total to ensure accuracy including extra vents
+      // Recalculate total to ensure accuracy
       var allL3=logs.filter(function(l){return l.clientId===c.id&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
       var logIdx3=allL3.indexOf(log);
       var isFirstLog3=(logIdx3===allL3.length-1);
       var isSecondLog3=(logIdx3===allL3.length-2);
       var isRE3=c.plan==='Real Estate';
-      var baseAmt3=isRE3?(isFirstLog3?199:49):(c.rate+(log.setup||0));
+      var hadEval3=!!logs.find(function(l){return l.clientId===c.id&&l.visitType==='evaluation';});
+      // Setup: only on first service if NO evaluation was done
+      var setupAmt3=isFirstLog3&&!isRE3&&!hadEval3?(log.setup||175):0;
+      var baseAmt3=isRE3?(isFirstLog3?199:49):(c.rate+setupAmt3);
       var extTotal3=(log.extras||[]).reduce(function(s,e){return s+e.p;},0);
-      // Add extra vents if they should be charged this visit
+      // Extra vents: only on second visit (month 2), never on first
       var incV3=INC_V[c.plan]||10;
       var ev3=Math.max(0,(c.vents||0)-incV3);
       var evPrice3=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;
