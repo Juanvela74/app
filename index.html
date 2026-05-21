@@ -1451,10 +1451,17 @@ function openReceiptModal(id){
   var defaultSetup=isFirst&&!isB2Bplan&&!hadEval?175:0;
   var setup=isRE?0:(lastServiceLog&&lastServiceLog.setup>0&&!hadEval?lastServiceLog.setup:defaultSetup);
   var evScheduleText=EV_M[c.plan]||'month 2';
-  // Extra vents: ALWAYS Pending on first service visit (charged visit 2)
+  // Extra vents: Pending on first service, charged from month 2 onwards (30+ days after first service)
   var showEVPending=isFirst&&ev>0;
-  var evTimes=EV_T[c.plan]||1;
-  var showEVCharged=!isFirst&&ev>0&&(isSecond||(serviceLogs.length%Math.round(12/evTimes)===1));
+  var firstSvcLog=serviceLogs.length>0?serviceLogs[serviceLogs.length-1]:null; // oldest service log
+  var firstSvcDate=firstSvcLog?firstSvcLog.date:null;
+  var currentLogDate=lastServiceLog?lastServiceLog.date:null;
+  var daysSinceFirst=0;
+  if(firstSvcDate&&currentLogDate&&firstSvcDate!==currentLogDate){
+    daysSinceFirst=Math.floor((new Date(currentLogDate+'T12:00:00')-new Date(firstSvcDate+'T12:00:00'))/(1000*60*60*24));
+  }
+  // Charge vents on month 2+ (≥28 days after first service)
+  var showEVCharged=!isFirst&&ev>0&&daysSinceFirst>=28;
   var evTotal=showEVCharged?evc:0;
   var extItems=lastServiceLog?lastServiceLog.extras:[];
   var extTotal=extItems.reduce(function(s,e){return s+e.p;},0);
@@ -1641,10 +1648,10 @@ function buildRoute(dv){
   var el=document.getElementById('route-content');if(!el)return;
   var dateObj=new Date(dv+'T12:00:00');
   var dayName=dateObj.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-  // Get scheduled visits for this date from logs
-  var scheduledLogs=logs.filter(function(l){return l.status==='Scheduled'&&l.date===dv;});
-  // Also include completed visits on this date
-  var completedLogs=logs.filter(function(l){return l.status!=='Scheduled'&&l.date===dv;});
+  // Get scheduled visits for this date from logs (exclude evaluation logs from route)
+  var scheduledLogs=logs.filter(function(l){return l.status==='Scheduled'&&l.date===dv&&l.visitType!=='evaluation';});
+  // Also include completed SERVICE visits on this date (not evaluations)
+  var completedLogs=logs.filter(function(l){return l.status!=='Scheduled'&&l.date===dv&&l.visitType!=='evaluation';});
   // Build unique client list from scheduled (priority) + completed
   var seen={};
   var list=[];
@@ -1797,7 +1804,21 @@ function buildPortal(id){
       return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">'+portalLabel+'</span><span style="font-weight:600">$'+portalAmt+'</span></div>';
     })()
     +(c.plan!=='Real Estate'&&log.setup>0&&!logs.find(function(l){return l.clientId===c.id&&l.visitType==='evaluation';})?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Contract & Plan Activation</span><span style="font-weight:600;color:var(--dk)">$'+log.setup+'</span></div>':'')
-    +((function(){var incV2=INC_V[c.plan]||10;var ev2=Math.max(0,(c.vents||0)-incV2);var evPrice2=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;var evc2=ev2*evPrice2;var svcL=logs.filter(function(l){return l.clientId===c.id&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});var isFirst2=svcL.indexOf(log)===svcL.length-1;var isSecond2=svcL.indexOf(log)===svcL.length-2;if(isFirst2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--ok)">⚡ Extra vents ('+ev2+'×$'+evPrice2+') — charged visit 2</span><span style="font-weight:600;color:var(--ok)">Pending</span></div>';if(isSecond2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--gd)">Extra vents ('+ev2+'×$'+evPrice2+')</span><span style="font-weight:600;color:var(--gd)">$'+evc2+'</span></div>';return '';})())
+    +((function(){
+      var incV2=INC_V[c.plan]||10;
+      var ev2=Math.max(0,(c.vents||0)-incV2);
+      var evPrice2=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;
+      var evc2=ev2*evPrice2;
+      var svcL=logs.filter(function(l){return l.clientId===c.id&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
+      var isFirst2=svcL.indexOf(log)===svcL.length-1;
+      var firstSvc=svcL.length>0?svcL[svcL.length-1]:null;
+      var days2=0;
+      if(firstSvc&&log.date&&firstSvc.date!==log.date)
+        days2=Math.floor((new Date(log.date+'T12:00:00')-new Date(firstSvc.date+'T12:00:00'))/(1000*60*60*24));
+      if(isFirst2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--ok)">⚡ Extra vents ('+ev2+'×$'+evPrice2+') — charged month 2</span><span style="font-weight:600;color:var(--ok)">Pending</span></div>';
+      if(!isFirst2&&days2>=28&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--gd)">Extra vents ('+ev2+'×$'+evPrice2+')</span><span style="font-weight:600;color:var(--gd)">$'+evc2+'</span></div>';
+      return '';
+    })())
     +((function(){var fp3=FP[c.plan]||35;var tf3=(c.f1q||1)+(c.f2q||0);var ef3=Math.max(0,tf3-2);var efc3=ef3*fp3;return efc3>0?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--tl)">Extra filters ('+ef3+'×$'+fp3+')</span><span style="font-weight:600;color:var(--tl)">$'+efc3+'</span></div>':'';})())
     +(log.extras||[]).map(function(e){return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">+ '+e.n+'</span><span style="font-weight:600;color:var(--er)">$'+e.p+'</span></div>';}).join('')
     +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+(function(){
@@ -1812,11 +1833,13 @@ function buildPortal(id){
       var setupAmt3=isFirstLog3&&!isRE3&&!hadEval3?(log.setup||175):0;
       var baseAmt3=isRE3?(isFirstLog3?199:49):(c.rate+setupAmt3);
       var extTotal3=(log.extras||[]).reduce(function(s,e){return s+e.p;},0);
-      // Extra vents: only on second visit (month 2), never on first
+      // Extra vents: charged from month 2 (≥28 days after first service)
       var incV3=INC_V[c.plan]||10;
       var ev3=Math.max(0,(c.vents||0)-incV3);
       var evPrice3=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;
-      var evAmt3=(isSecondLog3&&ev3>0)?ev3*evPrice3:0;
+      var firstSvc3=allL3.length>0?allL3[allL3.length-1]:null;
+      var days3=firstSvc3&&log.date&&firstSvc3.date!==log.date?Math.floor((new Date(log.date+'T12:00:00')-new Date(firstSvc3.date+'T12:00:00'))/(1000*60*60*24)):0;
+      var evAmt3=(!isFirstLog3&&days3>=28&&ev3>0)?ev3*evPrice3:0;
       return baseAmt3+extTotal3+evAmt3;
     })()+'</span></div>'
     +'<div style="text-align:center;margin-top:8px" id="print-btn-'+log.id+'"></div>'
