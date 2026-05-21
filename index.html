@@ -798,8 +798,10 @@ function saveClient(mode){
 }
 
 function openEvalReceipt(client){
-  var today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
-  var rnum='PPC-'+Date.now().toString().slice(-6);
+  var evalL=logs.find(function(l){return l.clientId===client.id&&l.visitType==='evaluation';});
+  var evalDateStr=evalL?evalL.date:new Date().toISOString().split('T')[0];
+  var today=new Date(evalDateStr+'T12:00:00').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+  var rnum='PPC-'+(evalL?evalL.id.slice(-6):Date.now().toString().slice(-6));
   var isRE=client.plan==='Real Estate';
   var isB2B=client.plan==='Casa Piloto'||(client.plan&&client.plan.includes('Construction'));
   // Setup fees
@@ -847,11 +849,10 @@ function openLogReceipt(logId, clientId){
   if(!log)return;
   var c=clients.find(function(x){return x.id===clientId;});
   if(!c)return;
-  if(log.visitType==='evaluation'){
-    // Show evaluation/contract receipt
+  if(log.visitType==='evaluation'||log.status==='Completed'&&log.visitType==='evaluation'){
     openEvalReceipt(c);
   } else {
-    // Show service receipt — temporarily set context so openReceiptModal shows this specific log
+    // For service logs, temporarily override lastServiceLog context via openReceiptModal
     openReceiptModal(clientId);
   }
 }
@@ -1705,7 +1706,7 @@ function buildRoute(dv){
       btns.appendChild(bComplete);
     } else {
       var bRecR=document.createElement('button');bRecR.className='btn bg bs';bRecR.textContent='🧾 Receipt';
-      bRecR.addEventListener('click',(function(cid){return function(){openReceiptModal(cid);};})(c.id));
+      bRecR.addEventListener('click',(function(lid,cid){return function(){openLogReceipt(lid,cid);};})(log.id,c.id));
       btns.appendChild(bRecR);
     }
     var bTime=document.createElement('button');bTime.className='btn bo bs';bTime.textContent='🕐 Reschedule';
