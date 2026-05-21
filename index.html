@@ -197,7 +197,10 @@ function logDisplayAmt(log){
   if(!log||log.status==='Scheduled')return 0;
   if(log.visitType==='evaluation'){
     var c2=clients.find(function(x){return x.id===log.clientId;});
-    return c2&&c2.plan==='Real Estate'?199:175;
+    if(!c2)return log.total||0;
+    var isRE2=c2.plan==='Real Estate';
+    var reSize2=c2.size||'medium';
+    return isRE2?(RE_SETUP[reSize2]||350)+RE_MONTHLY:175;
   }
   var c2=clients.find(function(x){return x.id===log.clientId;});
   if(!c2)return log.total||0;
@@ -205,8 +208,9 @@ function logDisplayAmt(log){
   var svcLogs=logs.filter(function(l){return l.clientId===log.clientId&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
   var isFirst=svcLogs.indexOf(log)===svcLogs.length-1;
   var isRE=c2.plan==='Real Estate';
+  var reSize3=c2.size||'medium';
   var setup=isFirst&&!isRE&&!hadEval?175:0;
-  var base=isRE?(isFirst?199:49):(c2.rate+setup);
+  var base=isRE?(isFirst?(RE_SETUP[reSize3]||350)+RE_MONTHLY:RE_MONTHLY):(c2.rate+setup);
   var extras=(log.extras||[]).reduce(function(s,e){return s+e.p;},0);
   return base+extras;
 }
@@ -1783,8 +1787,9 @@ function buildPortal(id){
       var isFirstLog=(logIdx2===allL2.length-1);
       if(isRE2){
         // RE first visit: show $199 all-in; subsequent: show $49
-        var reAmt=isFirstLog?199:49;
-        var reLabel=isFirstLog?'Real Estate — First Visit (incl. $150 setup + $49/mo)':'Real Estate — Monthly Maintenance';
+        var reSize3=c.size||'medium';
+        var reAmt=isFirstLog?(RE_SETUP[reSize3]||350)+RE_MONTHLY:RE_MONTHLY;
+        var reLabel=isFirstLog?'Real Estate — First Visit (cleaning + $'+RE_MONTHLY+'/mo)':'Real Estate — Monthly Maintenance';
         return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">'+reLabel+'</span><span style="font-weight:600">$'+reAmt+'</span></div>';
       }
       var portalLabel=isB2B2?c.plan+' Service':'Monthly — '+c.plan;
@@ -1819,7 +1824,8 @@ function buildPortal(id){
       var hadEval3=!!logs.find(function(l){return l.clientId===c.id&&l.visitType==='evaluation';});
       // Setup: only on first service if NO evaluation was done
       var setupAmt3=isFirstLog3&&!isRE3&&!hadEval3?(log.setup||175):0;
-      var baseAmt3=isRE3?(isFirstLog3?199:49):(c.rate+setupAmt3);
+      var reSize4=c.size||'medium';
+      var baseAmt3=isRE3?(isFirstLog3?(RE_SETUP[reSize4]||350)+RE_MONTHLY:RE_MONTHLY):(c.rate+setupAmt3);
       var extTotal3=(log.extras||[]).reduce(function(s,e){return s+e.p;},0);
       // Extra vents: charged from month 2 (≥28 days after first service)
       var incV3=INC_V[c.plan]||10;
