@@ -772,19 +772,21 @@ function saveClient(mode){
     toast('✅ Client updated!');
   } else {
     clients.push(client);
-    var result=smartAssignDate(client.next||client.start, client.addr);
+    var scheduleMode=mode;
+    // Save&Schedule: first visit = today (client.start). Evaluation: first service = next agreed date
+    var firstVisitDate=scheduleMode==='eval'?(client.next||client.start):client.start;
+    var result=smartAssignDate(firstVisitDate, client.addr);
     var ni=clients.length-1;
     clients[ni].next=result.date;
     clients[ni].time=result.time;
-    var scheduleMode=mode;
     var startDateStr=result.date||client.start;
     var todayStr=new Date().toISOString().split('T')[0];
     // FLUJO B: create a Completed log for TODAY (evaluation/contract day - setup fee only)
     if(mode==='eval'){
       var isREeval=client.plan==='Real Estate';
-      var evalSetup=isREeval?150:175;
-      var evalMonthly=isREeval?49:0;
-      var evalTotal=isREeval?(evalSetup+evalMonthly):evalSetup;
+      var evalSetup=isREeval?(RE_SETUP[client.size||'medium']||350):175;
+      var evalMonthly=isREeval?RE_MONTHLY:0;
+      var evalTotal=evalSetup+evalMonthly;
       logs.push({
         id:'EVAL-'+Date.now(),
         clientId:client.id,clientName:client.name,plan:client.plan,
