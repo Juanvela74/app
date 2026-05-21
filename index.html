@@ -1797,6 +1797,8 @@ function buildPortal(id){
       log.scent==='Yes'?'✅ Scent refilled — '+log.clientScent:'',
       log.benef==='Yes'?'✅ Benefect applied':''
     ].filter(Boolean).concat((log.extras||[]).map(function(e){return '✅ '+e.n+' — $'+e.p;}));
+    // Skip service logs where no real work was done (e.g. accidentally saved without completing)
+    if(!isEval&&log.f1!=='Yes'&&log.scent!=='Yes'&&log.benef!=='Yes'&&!(log.extras&&log.extras.length)&&log.total===0){return '';}
     // Evaluation log — show as contract card
     if(isEval){
       return '<div class="pvc" style="border-left:4px solid #94a3b8;background:#f8fafc">'
