@@ -919,8 +919,10 @@ function openCompleteVisitModal(logId, clientId){
     var ci2=clients.findIndex(function(x){return x.id===clientId;});
     if(ci2>=0&&svV2!==clients[ci2].vents)clients[ci2].vents=svV2;
     var b2bSetup2=typeof B2B_SETUP!=='undefined'&&B2B_SETUP[c.plan]!==undefined?B2B_SETUP[c.plan]:175;
-    var setup2=isFirst&&!isREplan?b2bSetup2:0;
+    var hadEval2=!!logs.find(function(l){return l.clientId===clientId&&l.visitType==='evaluation';});
+    var setup2=isFirst&&!isREplan&&!hadEval2?b2bSetup2:0;
     var baseRate2=isREplan?(isFirst?199:49):c.rate;
+    // Never include pending vents in total (they are charged on visit 2, not here)
     var total2=baseRate2+extTotal2+(isREplan?0:setup2);
     var newScent2=g('sv-scent-new')||c.scent||'';
     if(newScent2&&ci2>=0)clients[ci2].scent=newScent2;
@@ -1328,11 +1330,12 @@ function saveSvc(){
   if(!cid){toast('⚠️ Select a client');return;}
   var c=clients.find(function(x){return x.id===cid;});if(!c)return;
   var date=document.getElementById('sv-d')?document.getElementById('sv-d').value:'';
-  var isFirst=!logs.find(function(l){return l.clientId===cid;});
+  var isFirst=!logs.find(function(l){return l.clientId===cid&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
   var sameDay=c.start===date;
   var isREplan=c.plan==='Real Estate';
+  var hadEvalSvc=!!logs.find(function(l){return l.clientId===cid&&l.visitType==='evaluation';});
   var b2bSetupFee=typeof B2B_SETUP!=='undefined'&&B2B_SETUP[c.plan]!==undefined?B2B_SETUP[c.plan]:175;
-  var setup=(isFirst||sameDay)?b2bSetupFee:0;
+  var setup=(isFirst||sameDay)&&!hadEvalSvc&&!isREplan?b2bSetupFee:0;
   var extTotal=currentExtras.reduce(function(s,e){return s+e.p;},0);
   // Read vents from service log form (may have been updated during visit)
   var svVentsVal=document.getElementById('sv-vents')?parseInt(document.getElementById('sv-vents').value)||c.vents||10:c.vents||10;
@@ -1686,12 +1689,12 @@ function buildRoute(dv){
       +'<div style="text-align:right"><span class="pb '+(c.plan==='Pure Living'?'ppl':c.plan==='Luxury Air'?'pla':'pfh')+'">'+c.plan+'</span>'
       +'<div style="font-size:13px;font-weight:600;color:var(--dk);margin-top:4px">🕐 '+(log.time||c.time||'08:30')+' → '+endTime+'</div>'
       +'<div style="font-size:11px;color:#888">'+estLabel+' · '+(c.sqft?c.sqft+' sqft':c.size||'medium')+'</div></div></div>'
-      +'<div style="background:var(--gy);border-radius:8px;padding:10px 12px;margin:8px 0'+(isScheduled?'':';display:none')+'"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tl);margin-bottom:5px">🎒 Kit for this visit</div>'
+      +'<div style="background:var(--gy);border-radius:8px;padding:10px 12px;margin:8px 0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tl);margin-bottom:5px">🎒 Kit for this visit</div>'
       +'<div style="font-size:13px;color:#444;padding:2px 0">• '+tf+'x '+ft+' filters</div>'
       +'<div style="font-size:13px;color:#444;padding:2px 0">• Fragrance: <strong>'+c.scent+'</strong></div>'
       +'<div style="font-size:13px;color:#444;padding:2px 0">• Diffuser — Serial: '+(c.ds1||'—')+'</div>'
       +(c.plan==='Luxury Air'?'<div style="font-size:13px;color:var(--er);padding:2px 0">• Benefect Decon 30 ✓</div>':'')+'</div>'
-      +'<div style="background:#FDF3E0;border-radius:8px;padding:10px 12px;border-left:3px solid var(--gd)'+(isScheduled?'':';display:none')+'"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gd);margin-bottom:4px">💡 Offer today</div><div style="font-size:12px;color:#854F0B">🌀 Dryer vent $99 · 🔍 Inspection $79 · 🧫 Anti-mold from $149</div></div>'
+      +(isScheduled?'<div style="background:#FDF3E0;border-radius:8px;padding:10px 12px;border-left:3px solid var(--gd)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gd);margin-bottom:4px">💡 Offer today</div><div style="font-size:12px;color:#854F0B">🌀 Dryer vent $99 · 🔍 Inspection $79 · 🧫 Anti-mold from $149</div></div>':'')
       +(c.access?'<div style="background:var(--lt);border-radius:6px;padding:6px 10px;margin-top:8px;font-size:12px">🔑 Access: <strong>'+c.access+'</strong>'+(c.pets?' · 🐾 '+c.pets:'')+'</div>':'');
     var btns=document.createElement('div');btns.style.cssText='display:flex;gap:8px;margin-top:12px;flex-wrap:wrap';
     if(isScheduled){
