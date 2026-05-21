@@ -841,6 +841,21 @@ function openEvalReceipt(client){
   document.getElementById('mo-receipt').classList.add('on');
 }
 
+// Routes to correct receipt based on log type
+function openLogReceipt(logId, clientId){
+  var log=logs.find(function(l){return l.id===logId;});
+  if(!log)return;
+  var c=clients.find(function(x){return x.id===clientId;});
+  if(!c)return;
+  if(log.visitType==='evaluation'){
+    // Show evaluation/contract receipt
+    openEvalReceipt(c);
+  } else {
+    // Show service receipt — temporarily set context so openReceiptModal shows this specific log
+    openReceiptModal(clientId);
+  }
+}
+
 // ── COMPLETE VISIT MODAL ─────────────────────────────────────────────────
 function openCompleteVisitModal(logId, clientId){
   currentSvcId=clientId;
@@ -997,15 +1012,15 @@ function renderLogByDate(el){
           var bR2=document.createElement('button');bR2.style.cssText='padding:5px 8px;font-size:11px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer';bR2.textContent='Reschedule';
           bR2.addEventListener('click',(function(lid,lds){return function(){var nd=prompt('New date (YYYY-MM-DD):',lds);if(!nd)return;var li=logs.findIndex(function(l){return l.id===lid;});if(li>=0){logs[li].date=nd;save();switchLogTab('date');toast('Rescheduled to '+nd);};};})(log.id,log.date));
           var bDl3=document.createElement('button');bDl3.style.cssText='padding:5px 8px;font-size:11px;background:#FCEBEB;color:#A32D2D;border:1px solid #f7c1c1;border-radius:8px;cursor:pointer';bDl3.textContent='Del';
-          bDl3.addEventListener('click',(function(lid){return function(){if(!confirm('Remove this visit?'))return;logs=logs.filter(function(l){return l.id!==lid;});save();switchLogTab('date');toast('Deleted');};})(log.id));
+          bDl3.addEventListener('click',(function(lid){return function(){var c=prompt('Type DELETE to remove this visit:');if(!c||c.trim().toUpperCase()!=='DELETE')return;logs=logs.filter(function(l){return l.id!==lid;});save();switchLogTab('date');toast('Deleted');};})(log.id));
           btnDiv.appendChild(bS2);btnDiv.appendChild(bR2);btnDiv.appendChild(bDl3);
         } else {
           var bE2=document.createElement('button');bE2.style.cssText='padding:5px 8px;font-size:11px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer';bE2.textContent='Edit';
           bE2.addEventListener('click',(function(lid){return function(){openEditSvcModal(lid);};})(log.id));
           var bRc2=document.createElement('button');bRc2.style.cssText='padding:5px 8px;font-size:11px;background:#f0fdf4;color:var(--ok);border:1px solid #bbf7d0;border-radius:8px;cursor:pointer';bRc2.textContent='Receipt';
-          bRc2.addEventListener('click',(function(cid){return function(){openReceiptModal(cid);};})(log.clientId));
+          bRc2.addEventListener('click',(function(lid,cid){return function(){openLogReceipt(lid,cid);};})(log.id,log.clientId));
           var bDl2=document.createElement('button');bDl2.style.cssText='padding:5px 8px;font-size:11px;background:#FCEBEB;color:#A32D2D;border:1px solid #f7c1c1;border-radius:8px;cursor:pointer';bDl2.textContent='Del';
-          bDl2.addEventListener('click',(function(lid){return function(){if(!confirm('Delete this log?'))return;logs=logs.filter(function(l){return l.id!==lid;});save();switchLogTab('date');toast('Deleted');};})(log.id));
+          bDl2.addEventListener('click',(function(lid){return function(){var c=prompt('Type DELETE to remove this log:');if(!c||c.trim().toUpperCase()!=='DELETE')return;logs=logs.filter(function(l){return l.id!==lid;});save();switchLogTab('date');toast('Deleted');};})(log.id));
           btnDiv.appendChild(bE2);btnDiv.appendChild(bRc2);btnDiv.appendChild(bDl2);
         }
         el.appendChild(card);
@@ -1064,7 +1079,7 @@ function renderClientVisitList(clientId,el){
       btnDiv.appendChild(bSt);btnDiv.appendChild(bRs);
     } else {
       var bRc=document.createElement('button');bRc.style.cssText='padding:6px 8px;font-size:11px;background:#f0fdf4;color:var(--ok);border:1px solid #bbf7d0;border-radius:8px;cursor:pointer';bRc.textContent='Receipt';
-      bRc.addEventListener('click',(function(cid){return function(){openReceiptModal(cid);};})(log.clientId));
+      bRc.addEventListener('click',(function(lid,cid){return function(){openLogReceipt(lid,cid);};})(log.id,log.clientId));
       btnDiv.appendChild(bRc);
     }
     el.appendChild(card);
