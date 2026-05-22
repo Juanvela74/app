@@ -332,34 +332,23 @@ function buildClientsTable(data){
       '<td><span class="sbg '+sc+'">'+c.status+'</span></td>'
     ];
     tr.innerHTML=cells.join('');
-    // Actions cell with real DOM buttons
+    // Actions — only client management, no visit/receipt buttons
     var actionTd=document.createElement('td');
     var div=document.createElement('div');
     div.style.cssText='display:flex;gap:5px;flex-wrap:wrap';
-    var bEdit=document.createElement('button');bEdit.className='btn bo bs';bEdit.textContent='✏️';
-    var bVisit=document.createElement('button');bVisit.className='btn bt bs';bVisit.textContent='🔧 Visit';
-    var bReceipt=document.createElement('button');bReceipt.className='btn bg bs';bReceipt.textContent='🧾';
-    var bReschedule=document.createElement('button');bReschedule.className='btn bs';bReschedule.style.cssText='padding:6px 12px;font-size:12px;background:#E8F5F3;color:var(--tl);border:1px solid var(--tl);border-radius:8px;cursor:pointer';bReschedule.textContent='📅 Reschedule';
+    var bEdit=document.createElement('button');bEdit.className='btn bo bs';bEdit.textContent='✏️ Edit';
     var bStatus=document.createElement('button');
     bStatus.className='btn bs';
     bStatus.style.cssText='padding:6px 12px;font-size:12px;background:'+(c.status==='Active'?'#FDF3E0':'#EAF3DE')+';color:'+(c.status==='Active'?'#854F0B':'#3B6D11')+';border:1px solid '+(c.status==='Active'?'#FAC775':'#A3D977')+';border-radius:8px;cursor:pointer';
-    bStatus.textContent=c.status==='Active'?'⏸️ Inactivate':'✅ Reactivate';
+    bStatus.textContent=c.status==='Active'?'⏸️ Pause':'✅ Activate';
     var bDel=document.createElement('button');bDel.className='btn bs';bDel.style.cssText='padding:6px 12px;font-size:12px;background:#FCEBEB;color:#A32D2D;border:1px solid #F7C1C1;border-radius:8px;cursor:pointer';bDel.textContent='🗑️';
     (function(id){
       bEdit.addEventListener('click',function(){openEditClient(id);});
-      bVisit.addEventListener('click',(function(cid){return function(){
-        var nextLog=logs.filter(function(l){return l.clientId===cid&&l.status==='Scheduled';}).sort(function(a,b){return a.date.localeCompare(b.date);})[0];
-        if(nextLog)openCompleteVisitModal(nextLog.id,cid);
-        else toast('No scheduled visits found — check Service Log');
-      };})(id));
-      bReceipt.addEventListener('click',(function(cid){return function(){var lastL=logs.filter(function(l){return l.clientId===cid&&l.status!=='Scheduled';}).sort(function(a,b){return b.date.localeCompare(a.date);})[0];openReceiptModal(cid,lastL?lastL.id:null);};})(id));
-      bReschedule.addEventListener('click',function(){openRescheduleClient(id);});
       bStatus.addEventListener('click',function(){toggleClientStatus(id);});
       bDel.addEventListener('click',function(){deleteClient(id);});
     })(c.id);
-    div.appendChild(bEdit);div.appendChild(bVisit);div.appendChild(bReceipt);div.appendChild(bReschedule);div.appendChild(bStatus);div.appendChild(bDel);
-    actionTd.appendChild(div);tr.appendChild(actionTd);
-    tb.appendChild(tr);
+    div.appendChild(bEdit);div.appendChild(bStatus);div.appendChild(bDel);
+    actionTd.appendChild(div);tr.appendChild(actionTd);tb.appendChild(tr);
   });
 }
 
@@ -1000,7 +989,7 @@ function renderLogByDate(el){
           bRc2.addEventListener('click',(function(lid,cid){return function(){openLogReceipt(lid,cid);};})(log.id,log.clientId));
           var bDl2=document.createElement('button');bDl2.style.cssText='padding:5px 8px;font-size:11px;background:#FCEBEB;color:#A32D2D;border:1px solid #f7c1c1;border-radius:8px;cursor:pointer';bDl2.textContent='Del';
           bDl2.addEventListener('click',(function(lid){return function(){var c=prompt('Type DELETE to remove this log:');if(!c||c.trim().toUpperCase()!=='DELETE')return;logs=logs.filter(function(l){return l.id!==lid;});save();switchLogTab('date');toast('Deleted');};})(log.id));
-          btnDiv.appendChild(bE2);btnDiv.appendChild(bRc2);btnDiv.appendChild(bDl2);
+          btnDiv.appendChild(bE2);btnDiv.appendChild(bDl2);
         }
         el.appendChild(card);
       });
@@ -1057,9 +1046,7 @@ function renderClientVisitList(clientId,el){
       bRs.addEventListener('click',(function(lid,lds){return function(){var nd=prompt('New date (YYYY-MM-DD):',lds);if(!nd)return;var li=logs.findIndex(function(l){return l.id===lid;});if(li>=0){logs[li].date=nd;save();renderClientVisitList(clientId,el);toast('Rescheduled');};};})(log.id,log.date));
       btnDiv.appendChild(bSt);btnDiv.appendChild(bRs);
     } else {
-      var bRc=document.createElement('button');bRc.style.cssText='padding:6px 8px;font-size:11px;background:#f0fdf4;color:var(--ok);border:1px solid #bbf7d0;border-radius:8px;cursor:pointer';bRc.textContent='Receipt';
-      bRc.addEventListener('click',(function(lid,cid){return function(){openLogReceipt(lid,cid);};})(log.id,log.clientId));
-      btnDiv.appendChild(bRc);
+      // No receipt button in service log — receipts are in Route and Client View
     }
     el.appendChild(card);
   });
@@ -1692,102 +1679,34 @@ function buildPortal(id){
   +'<h3 style="font-family:Playfair Display,serif;font-size:18px;color:var(--dk);margin-bottom:1rem">Service History</h3>'
   +(!cLogs.length?'<div class="es" style="background:#fff;border-radius:var(--r)"><div class="ei">📋</div><h3>No visits yet</h3></div>'
   :cLogs.map(function(log){
+    if(!log.total&&log.total!==0)return ''; // skip empty logs
     var d=new Date(log.date+'T12:00:00');
     var ds=d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
     var isEval=log.visitType==='evaluation';
-    var stars=isEval?'':'★'.repeat(log.rating)+'☆'.repeat(5-(log.rating||5));
     var borderColor=isEval?'#94a3b8':(c.plan==='Luxury Air'?'var(--gd)':c.plan==='Pure Living'?'var(--tl)':'var(--md)');
-    var done=isEval?[]:[
-      '✅ Duct cleaning & sanitization',
-      log.f1==='Yes'?'✅ Filters changed':'',
-      log.scent==='Yes'?'✅ Scent refilled — '+log.clientScent:'',
-      log.benef==='Yes'?'✅ Benefect applied':''
-    ].filter(Boolean).concat((log.extras||[]).map(function(e){return '✅ '+e.n+' — $'+e.p;}));
-    // Skip service logs where no real work was done (e.g. accidentally saved without completing)
-    if(!isEval&&log.f1!=='Yes'&&log.scent!=='Yes'&&log.benef!=='Yes'&&!(log.extras&&log.extras.length)&&log.total===0){return '';}
-    // Evaluation log — show as contract card
-    if(isEval){
-      return '<div class="pvc" style="border-left:4px solid #94a3b8;background:#f8fafc">'
-        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
-        +'<div><span style="background:#e2e8f0;color:#475569;font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;text-transform:uppercase">📋 Contract Signed</span>'
-        +'<div style="font-weight:700;color:var(--dk);margin-top:4px">'+ds+(log.time?' at '+log.time:'')+'</div></div>'
-        +'<div style="text-align:right;font-size:13px;font-weight:700;color:var(--dk)">$'+log.total+'</div></div>'
-        +'<div style="font-size:12px;color:#888;margin-bottom:8px">Plan activated: <strong>'+c.plan+' ('+c.size+')</strong> · $'+c.rate+'/mo</div>'
-        +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px">'
-        +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--dk);margin-bottom:8px">🧾 Contract Receipt</div>'
-        +(c.plan==='Real Estate'
-          ?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Setup Fee</span><span style="font-weight:600">$150</span></div>'
-           +'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">First Month</span><span style="font-weight:600">$49</span></div>'
-          :'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Setup Fee — Diffuser Installation</span><span style="font-weight:600">$'+log.setup+'</span></div>')
-        +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+logDisplayAmt(log)+'</span></div>'
-        +'</div></div>';
-    }
-    // Regular service log
-    return '<div class="pvc" style="border-left:4px solid '+borderColor+'"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:700;color:var(--dk)">'+ds+(log.time?' at '+log.time:'')+'</div><div style="color:var(--gd);font-size:15px">'+stars+'</div></div>'
-    +'<div style="font-size:12px;color:#888;margin-bottom:10px">👨‍🔧 '+log.tech+' · ⏱️ '+(log.dur||'—')+' min · 💰 $'+logDisplayAmt(log)+'</div>'
-    +'<div style="background:var(--tll);border-radius:8px;padding:10px 12px;margin-bottom:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--tl);margin-bottom:6px">Work Performed</div>'+done.map(function(w){return '<div style="font-size:13px;color:#444;padding:1px 0">'+w+'</div>';}).join('')+'</div>'
-    +'<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#888;margin-bottom:6px">📷 Service Photos</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">'+['Before 1','Before 2','After 1','After 2'].map(function(lbl){return '<div style="aspect-ratio:1;background:var(--gy);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;color:#888;border:1px dashed #ccc"><span style="font-size:18px">📷</span>'+lbl+'</div>';}).join('')+'</div><div style="font-size:10px;color:#888;margin-top:4px;text-align:center">Photos will be available once database is connected</div></div>'
-    +'<div style="background:#fff;border:1px solid #f0f0f0;border-radius:8px;padding:10px 14px">'
-    +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--dk);margin-bottom:8px">🧾 Receipt Summary</div>'
-    +(function(){
-      var isRE2=c.plan==='Real Estate';
-      var isB2B2=c.plan==='Casa Piloto'||(c.plan&&c.plan.includes('Construction'));
-      var allL2=logs.filter(function(l){return l.clientId===c.id&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
-      var logIdx2=allL2.indexOf(log);
-      var isFirstLog=(logIdx2===allL2.length-1);
-      if(isRE2){
-        // RE first visit: show $199 all-in; subsequent: show $49
-        var reSize3=c.size||'medium';
-        var reAmt=isFirstLog?(RE_SETUP[reSize3]||350)+RE_MONTHLY:RE_MONTHLY;
-        var reLabel=isFirstLog?'Real Estate — First Visit (cleaning + $'+RE_MONTHLY+'/mo)':'Real Estate — Monthly Maintenance';
-        return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">'+reLabel+'</span><span style="font-weight:600">$'+reAmt+'</span></div>';
-      }
-      var portalLabel=isB2B2?c.plan+' Service':'Monthly — '+c.plan;
-      var portalAmt=c.rate;
-      return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">'+portalLabel+'</span><span style="font-weight:600">$'+portalAmt+'</span></div>';
-    })()
-    +(c.plan!=='Real Estate'&&log.setup>0&&!logs.find(function(l){return l.clientId===c.id&&l.visitType==='evaluation';})?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">Contract & Plan Activation</span><span style="font-weight:600;color:var(--dk)">$'+log.setup+'</span></div>':'')
-    +((function(){
-      var incV2=INC_V[c.plan]||10;
-      var ev2=Math.max(0,(c.vents||0)-incV2);
-      var evPrice2=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;
-      var evc2=ev2*evPrice2;
-      var svcL=logs.filter(function(l){return l.clientId===c.id&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
-      var isFirst2=svcL.indexOf(log)===svcL.length-1;
-      var firstSvc=svcL.length>0?svcL[svcL.length-1]:null;
-      var days2=0;
-      if(firstSvc&&log.date&&firstSvc.date!==log.date)
-        days2=Math.floor((new Date(log.date+'T12:00:00')-new Date(firstSvc.date+'T12:00:00'))/(1000*60*60*24));
-      if(isFirst2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--ok)">⚡ Extra vents ('+ev2+'×$'+evPrice2+') — charged month 2</span><span style="font-weight:600;color:var(--ok)">Pending</span></div>';
-      if(!isFirst2&&days2>=28&&days2<=65&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--gd)">Extra vents ('+ev2+'×$'+evPrice2+')</span><span style="font-weight:600;color:var(--gd)">$'+evc2+'</span></div>';
-      return '';
-    })())
-    +((function(){var fp3=FP[c.plan]||35;var tf3=(c.f1q||1)+(c.f2q||0);var ef3=Math.max(0,tf3-2);var efc3=ef3*fp3;return efc3>0?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--tl)">Extra filters ('+ef3+'×$'+fp3+')</span><span style="font-weight:600;color:var(--tl)">$'+efc3+'</span></div>':'';})())
-    +(log.extras||[]).map(function(e){return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:#888">+ '+e.n+'</span><span style="font-weight:600;color:var(--er)">$'+e.p+'</span></div>';}).join('')
-    +'<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+(function(){
-      // Recalculate total to ensure accuracy
-      var allL3=logs.filter(function(l){return l.clientId===c.id&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
-      var logIdx3=allL3.indexOf(log);
-      var isFirstLog3=(logIdx3===allL3.length-1);
-      var isSecondLog3=(logIdx3===allL3.length-2);
-      var isRE3=c.plan==='Real Estate';
-      var hadEval3=!!logs.find(function(l){return l.clientId===c.id&&l.visitType==='evaluation';});
-      // Setup: only on first service if NO evaluation was done
-      var setupAmt3=isFirstLog3&&!isRE3&&!hadEval3?(log.setup||175):0;
-      var reSize4=c.size||'medium';
-      var baseAmt3=isRE3?(isFirstLog3?(RE_SETUP[reSize4]||350)+RE_MONTHLY:RE_MONTHLY):(c.rate+setupAmt3);
-      var extTotal3=(log.extras||[]).reduce(function(s,e){return s+e.p;},0);
-      // Extra vents: charged from month 2 (≥28 days after first service)
-      var incV3=INC_V[c.plan]||10;
-      var ev3=Math.max(0,(c.vents||0)-incV3);
-      var evPrice3=typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;
-      var firstSvc3=allL3.length>0?allL3[allL3.length-1]:null;
-      var days3=firstSvc3&&log.date&&firstSvc3.date!==log.date?Math.floor((new Date(log.date+'T12:00:00')-new Date(firstSvc3.date+'T12:00:00'))/(1000*60*60*24)):0;
-      var evAmt3=(!isFirstLog3&&days3>=28&&ev3>0)?ev3*evPrice3:0;
-      return baseAmt3+extTotal3+evAmt3;
-    })()+'</span></div>'
-    +'<div style="text-align:center;margin-top:8px" id="print-btn-'+log.id+'"></div>'
-    +'</div></div>';
+    // Build line items from stored log data
+    var items='';
+    var label=isEval?'Contract & Plan Activation':(log.isFirstSvc?'First Service — '+c.plan:'Monthly Service — '+c.plan);
+    if(c.plan==='Real Estate'&&log.isFirstSvc){label='Real Estate — First Service';}
+    if(c.plan==='Real Estate'&&isEval){label='Contract & Plan Activation';}
+    items+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span style="color:#444">'+label+'</span><span style="font-weight:600">$'+log.baseRate+'</span></div>';
+    if(log.setup>0)items+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span style="color:#444">Contract & Plan Activation</span><span style="font-weight:600">$'+log.setup+'</span></div>';
+    if(log.evPending&&log.evCount>0)items+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--ok)">⚡ Extra vents ('+log.evCount+'×$'+log.evPrice+') — next visit</span><span style="font-weight:600;color:var(--ok)">Pending</span></div>';
+    if(log.evCharged&&log.evCount>0)items+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span style="color:#444">Extra vents ('+log.evCount+'×$'+log.evPrice+')</span><span style="font-weight:600;color:var(--gd)">$'+(log.evCount*log.evPrice)+'</span></div>';
+    (log.extras||[]).forEach(function(e){items+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span style="color:#444">+ '+e.n+'</span><span style="font-weight:600;color:var(--er)">$'+e.p+'</span></div>';});
+    items+='<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+log.total+'</span></div>';
+    // Work performed
+    var done=[log.f1==='Yes'?'✅ Filters changed':'',log.scent==='Yes'?'✅ Scent refilled':'',log.benef==='Yes'?'✅ Benefect applied':''].filter(Boolean);
+    return '<div class="pvc" style="border-left:4px solid '+borderColor+'">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+      +'<div><div style="font-weight:700;color:var(--dk);font-size:15px">'+ds+'</div>'
+      +'<div style="font-size:12px;color:#888;margin-top:2px">'+(log.tech||'Juan Vela')+(log.dur?' · '+log.dur+' min':'')+'</div></div>'
+      +'<div style="text-align:right"><div style="font-size:18px;font-weight:700;color:var(--tl)">$'+log.total+'</div>'
+      +(isEval?'<span style="font-size:10px;background:#e2e8f0;color:#475569;padding:2px 6px;border-radius:8px">CONTRACT</span>':'')
+      +'</div></div>'
+      +(done.length?'<div style="background:var(--tll);border-radius:6px;padding:6px 10px;margin-bottom:8px;font-size:12px;color:var(--tl)">'+done.join(' · ')+'</div>':'')
+      +'<div style="background:#fafafa;border-radius:8px;padding:10px 12px;border:1px solid #f0f0f0">'+items+'</div>'
+      +'</div>';
   }).join(''));
 }
 
