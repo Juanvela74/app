@@ -921,7 +921,7 @@ function openCompleteVisitModal(logId, clientId){
     var b2bSetup2=!isREplan&&isFirst&&!hadEval2?(B2B_SETUP[c.plan]||175):0;
     var reSetupNow=RE_SETUP[c.size||'medium']||350;
     var baseRate2=isREplan?(isFirst?reSetupNow+RE_MONTHLY:RE_MONTHLY):c.rate;
-    var total2=baseRate2+extTotal2+(isREplan?0:b2bSetup2);
+    var total2=baseRate2+extTotal2+b2bSetup2; // includes extras + setup
     var newScent2=g('sv-scent-new')||c.scent||'';
     if(newScent2&&ci2>=0)clients[ci2].scent=newScent2;
     // Extra vents: pending on first visit
@@ -1256,8 +1256,6 @@ function openSvcModal(clientId){
     +'<div class="ff"><label>Fragrance This Visit</label><select id="sv-scent-new">'+(c?SCENTS.map(function(s){return '<option value="'+s.n+'"'+(s.n===c.scent?' selected':'')+'>'+s.em+' '+s.n+'</option>';}).join(''):SCENTS.map(function(s){return '<option>'+s.n+'</option>';}).join(''))+'</select></div>'
     +'<div class="ff"><label>Notes</label><textarea id="sv-n" rows="2" placeholder="Notes..."></textarea></div>'
     +'</div>'
-    +'<div style="margin-top:1rem"><div class="st">📷 Photos</div>'
-    +'<div class="pug">'+['Before 1','Before 2','After 1','After 2'].map(function(l,i){return '<div class="psl"><div style="font-size:20px">📷</div><div>'+l+'</div><input type="file" accept="image/*" capture="environment"></div>';}).join('')+'</div></div>'
     +'<div style="margin-top:1rem"><div class="st">💰 Extra Charges</div>'
     +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px" id="extras-btns"></div>'
     +'<div id="extras-list"><div style="font-size:12px;color:#888">No extras added</div></div>'
@@ -1673,8 +1671,8 @@ function buildRoute(dv){
       btns.appendChild(bRecEval);
     } else if(isScheduled){
       var bComplete=document.createElement('button');
-      bComplete.style.cssText='padding:9px 18px;font-size:13px;background:var(--tl);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700';
-      bComplete.textContent='✅ Complete Visit';
+      bComplete.style.cssText='padding:12px 24px;font-size:14px;background:#16A34A;color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:700;box-shadow:0 2px 8px rgba(22,163,74,.3)';
+      bComplete.textContent='▶ Start Visit';
       bComplete.addEventListener('click',(function(lid,cid){return function(){openCompleteVisitModal(lid,cid);};})(log.id,c.id));
       btns.appendChild(bComplete);
     } else {
