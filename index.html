@@ -813,6 +813,69 @@ function saveClient(mode){
   }
 }
 
+// ── PREPARE ROUTE MODAL ──────────────────────────────────────────────────────
+function openPrepareRouteModal(logId, clientId){
+  currentExtras=[];
+  var log=logs.find(function(l){return l.id===logId;});
+  var c=clients.find(function(x){return x.id===clientId;});
+  if(!c||!log)return;
+  // Pre-load existing extras if any
+  if(log.extras&&log.extras.length)currentExtras=log.extras.slice();
+  document.getElementById('ms-body').innerHTML=
+    '<div style="background:var(--lt);border-radius:8px;padding:12px 14px;margin-bottom:1rem">'
+    +'<div style="font-size:14px;font-weight:700;color:var(--dk)">'+c.name+' · '+c.plan+'</div>'
+    +'<div style="font-size:12px;color:#888;margin-top:2px">Preparing work order for Route</div>'
+    +'</div>'
+    +'<div class="fg">'
+    +'<div><label>Date</label><input type="date" id="pr-date" value="'+log.date+'"></div>'
+    +'<div><label>Time</label><input type="time" id="pr-time" value="'+(log.time||'08:30')+'"></div>'
+    +'<div><label>Technician</label><select id="pr-tech"><option'+((!log.tech||log.tech==='Juan Vela')?' selected':'')+'>Juan Vela</option><option'+(log.tech==='Jose Vela'?' selected':'')+'>Jose Vela</option></select></div>'
+    +'<div class="ff"><label>🌿 Fragrance</label><select id="pr-scent">'+SCENTS.map(function(s){return '<option value="'+s.n+'"'+((log.clientScent||c.scent)===s.n?' selected':'')+'>'+s.em+' '+s.n+'</option>';}).join('')+'</select></div>'
+    +'</div>'
+    +'<div style="margin-top:1rem"><div class="st">🛠️ Services to Perform</div>'
+    +'<div style="background:#f8fafc;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:13px;color:#475569">'
+    +'✓ Duct cleaning & sanitization<br>'
+    +'✓ Filter change ('+(c.f1q||1)+'x '+(FT[c.plan]||'MERV 11')+')<br>'
+    +'✓ Diffuser refill & scenting'
+    +(c.plan==='Luxury Air'?'<br>✓ Benefect Decon 30 sanitization':'')
+    +'</div>'
+    +'<div class="st" style="margin-top:8px">➕ Extra Services</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px" id="pr-extras-btns"></div>'
+    +'<div id="extras-list"></div>'
+    +'<div style="display:flex;justify-content:space-between;font-weight:700;color:var(--er);font-size:13px;padding-top:6px;border-top:1px solid #f0f0f0"><span>Extras:</span><span id="extras-total">$0</span></div>'
+    +'</div>'
+    +'<div style="margin-top:1rem"><div class="st">📝 Notes for Technician</div>'
+    +'<textarea id="pr-notes" rows="2" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px" placeholder="Special instructions...">'+(log.notes||'')+'</textarea>'
+    +'</div>';
+  // Extras buttons
+  var eb=document.getElementById('pr-extras-btns');
+  if(eb){EXTRAS_MENU.forEach(function(item){var b=document.createElement('button');b.className='btn bo bs';b.style.fontSize='11px';b.textContent='+ '+item.n+(item.custom?'':' $'+item.p);b.addEventListener('click',function(){addExtra(item);});eb.appendChild(b);});}
+  renderExtras();
+  document.getElementById('ms-save').onclick=function(){
+    var li=logs.findIndex(function(l){return l.id===logId;});
+    if(li<0)return;
+    var nd=document.getElementById('pr-date').value;
+    var nt=document.getElementById('pr-time').value;
+    var nsc=document.getElementById('pr-scent').value;
+    logs[li].date=nd;logs[li].time=nt;
+    logs[li].tech=document.getElementById('pr-tech').value;
+    logs[li].clientScent=nsc;logs[li].notes=document.getElementById('pr-notes').value;
+    logs[li].extras=currentExtras.slice();
+    logs[li].extTotal=currentExtras.reduce(function(s,e){return s+e.p;},0);
+    // Update client scent
+    var ci=clients.findIndex(function(x){return x.id===clientId;});
+    if(ci>=0)clients[ci].scent=nsc;
+    save();
+    document.getElementById('mo-svc').classList.remove('on');
+    // Go to Route on that date
+    goPage('route');
+    setTimeout(function(){var rd=document.getElementById('route-date');if(rd){rd.value=nd;buildRoute(nd);}},200);
+    toast('📋 Route prepared for '+nd);
+  };
+  document.getElementById('ms-save').textContent='📋 Confirm & Go to Route';
+  document.getElementById('mo-svc').classList.add('on');
+}
+
 // ── COMPLETE VISIT MODAL ─────────────────────────────────────────────────
 function openCompleteVisitModal(logId, clientId){
   currentSvcId=clientId;
@@ -847,11 +910,11 @@ function openCompleteVisitModal(logId, clientId){
     +(c.plan==='Luxury Air'?'<label style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8fafc;border-radius:8px;cursor:pointer;font-size:14px"><input type="checkbox" id="chk-benef" checked style="width:18px;height:18px"> Benefect Decon 30 sanitization</label>':'<input type="hidden" id="chk-benef" value="">')
     +(scheduledExtras.map(function(e,i){return '<label style="display:flex;align-items:center;gap:10px;padding:10px;background:#FFF8F0;border:1px solid #FAD7A0;border-radius:8px;cursor:pointer;font-size:14px"><input type="checkbox" id="chk-extra-'+i+'" checked style="width:18px;height:18px"> '+e.n+' <strong style="color:var(--er)">$'+e.p+'</strong></label>';}).join(''))
     +'</div></div>'
-    // ── LAST MINUTE EXTRAS ──
-    +'<div style="margin-bottom:1rem"><div class="st">➕ Last Minute Extras</div>'
-    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px" id="extras-btns"></div>'
-    +'<div id="extras-list"></div>'
-    +'<div style="display:flex;justify-content:space-between;font-weight:700;color:var(--er);font-size:13px;padding-top:6px;border-top:1px solid #f0f0f0"><span>Last minute total:</span><span id="extras-total">$0</span></div>'
+    // ── CLIENT EXTRA BUTTON ──
+    +'<div style="margin-bottom:1rem"><div class="st">➕ Client Extra (last minute)</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap" id="extras-btns"></div>'
+    +'<div id="extras-list" style="margin-top:8px"></div>'
+    +'<div style="display:flex;justify-content:space-between;font-weight:700;color:var(--er);font-size:13px;padding-top:6px;border-top:1px solid #f0f0f0;margin-top:6px"><span>Client extras:</span><span id="extras-total">$0</span></div>'
     +'</div>'
     // ── VENTS ──
     +'<div style="margin-bottom:1rem"><div class="st">🌀 Vents</div>'
@@ -871,17 +934,10 @@ function openCompleteVisitModal(logId, clientId){
     +'<div><label>Rating</label><select id="sv-r"><option value="5">⭐⭐⭐⭐⭐</option><option value="4">⭐⭐⭐⭐</option><option value="3">⭐⭐⭐</option><option value="2">⭐⭐</option><option value="1">⭐</option></select></div>'
     +'<div class="ff"><label>Notes</label><textarea id="sv-n" rows="2" placeholder="Any observations..."></textarea></div>'
     +'</div>';
-  // Last-minute extras buttons (scheduled ones shown as checklist above)
+  // Client extra buttons — ALL available services
+  currentExtras=[];
   var eb=document.getElementById('extras-btns');
-  if(eb){
-    EXTRAS_MENU.forEach(function(item){
-      if(scheduledExtras.find(function(e){return e.n===item.n;}))return;
-      var b=document.createElement('button');b.className='btn bo bs';b.style.fontSize='11px';
-      b.textContent='+ '+item.n+(item.custom?'':' $'+item.p);
-      b.addEventListener('click',function(){addExtra(item);});
-      eb.appendChild(b);
-    });
-  }
+  if(eb){EXTRAS_MENU.forEach(function(item){var b=document.createElement('button');b.className='btn bo bs';b.style.fontSize='11px';b.textContent='+ '+item.n+(item.custom?'':' $'+item.p);b.addEventListener('click',function(){addExtra(item);});eb.appendChild(b);});}
   // Vents auto-calc
   var svVentsEl2=document.getElementById('sv-vents');
   function updateSvVents2(){
@@ -896,10 +952,10 @@ function openCompleteVisitModal(logId, clientId){
   document.getElementById('ms-save').onclick=function(){
     var g=function(id){var el=document.getElementById(id);return el?el.value:'';};
     var chk=function(id){var el=document.getElementById(id);return el?(el.type==='checkbox'?el.checked:!!el.value):false;};
-    // Combine: scheduled extras (checked) + last-minute extras
+    // Scheduled extras (from checklist) + client last-minute extras
     var finalExtras=[];
     scheduledExtras.forEach(function(e,i){if(chk('chk-extra-'+i))finalExtras.push(e);});
-    currentExtras.forEach(function(e){if(!finalExtras.find(function(x){return x.n===e.n&&x.p===e.p;}))finalExtras.push(e);});
+    currentExtras.forEach(function(e){finalExtras.push(e);});
     var extTotal2=finalExtras.reduce(function(s,e){return s+e.p;},0);
     currentExtras=finalExtras;
     var svV2=parseInt(g('sv-vents'))||c.vents||10;
@@ -1007,8 +1063,8 @@ function renderLogByDate(el){
           +'<div style="display:flex;gap:6px;flex-wrap:wrap" id="dlb-'+log.id+'"></div>';
         var btnDiv=card.querySelector('#dlb-'+log.id);
         if(isScheduled){
-          var bRoute=document.createElement('button');bRoute.style.cssText='padding:7px 12px;font-size:12px;background:#0F766E;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600';bRoute.textContent='📍 View in Route';
-          bRoute.addEventListener('click',(function(lds){return function(){goPage('route');setTimeout(function(){var rd=document.getElementById('route-date');if(rd){rd.value=lds;buildRoute(lds);}},200);};})(log.date));
+          var bRoute=document.createElement('button');bRoute.style.cssText='padding:7px 12px;font-size:12px;background:#0F766E;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600';bRoute.textContent='📋 Prepare Route';
+          bRoute.addEventListener('click',(function(lid,cid){return function(){openPrepareRouteModal(lid,cid);};})(log.id,log.clientId));
           var bR2=document.createElement('button');bR2.style.cssText='padding:5px 8px;font-size:11px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer';bR2.textContent='Reschedule';
           bR2.addEventListener('click',(function(lid,lds){return function(){var nd=prompt('New date (YYYY-MM-DD):',lds);if(!nd)return;var li=logs.findIndex(function(l){return l.id===lid;});if(li>=0){logs[li].date=nd;save();switchLogTab('date');toast('Rescheduled to '+nd);};};})(log.id,log.date));
           var bDl3=document.createElement('button');bDl3.style.cssText='padding:5px 8px;font-size:11px;background:#FCEBEB;color:#A32D2D;border:1px solid #f7c1c1;border-radius:8px;cursor:pointer';bDl3.textContent='Del';
@@ -1072,8 +1128,8 @@ function renderClientVisitList(clientId,el){
       +'<div style="display:flex;gap:5px" id="cvl-'+log.id+'"></div>';
     var btnDiv=card.querySelector('#cvl-'+log.id);
     if(isScheduled){
-      var bSt=document.createElement('button');bSt.style.cssText='padding:6px 10px;font-size:11px;background:#0F766E;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600';bSt.textContent='📍 Route';
-      bSt.addEventListener('click',(function(lds){return function(){goPage('route');setTimeout(function(){var rd=document.getElementById('route-date');if(rd){rd.value=lds;buildRoute(lds);}},200);};})(log.date));
+      var bSt=document.createElement('button');bSt.style.cssText='padding:6px 10px;font-size:11px;background:#0F766E;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600';bSt.textContent='📋 Prepare Route';
+      bSt.addEventListener('click',(function(lid,cid){return function(){openPrepareRouteModal(lid,cid);};})(log.id,log.clientId));
       var bRs=document.createElement('button');bRs.style.cssText='padding:6px 8px;font-size:11px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer';bRs.textContent='Reschedule';
       bRs.addEventListener('click',(function(lid,lds){return function(){var nd=prompt('New date (YYYY-MM-DD):',lds);if(!nd)return;var li=logs.findIndex(function(l){return l.id===lid;});if(li>=0){logs[li].date=nd;save();renderClientVisitList(clientId,el);toast('Rescheduled');};};})(log.id,log.date));
       btnDiv.appendChild(bSt);btnDiv.appendChild(bRs);
@@ -1174,7 +1230,7 @@ function renderLogItems(){
         var bResched=document.createElement('button');bResched.className='btn bo bs';bResched.textContent='📅 Reschedule';
         var bDel2=document.createElement('button');bDel2.className='btn bs';bDel2.style.cssText='padding:6px 12px;font-size:12px;background:#FCEBEB;color:#A32D2D;border:1px solid #f7c1c1;border-radius:8px;cursor:pointer';bDel2.textContent='🗑️';
         (function(lid,cid2){
-          bStart.textContent='📍 View in Route';bStart.addEventListener('click',(function(lds){return function(){goPage('route');setTimeout(function(){var rd=document.getElementById('route-date');if(rd){rd.value=lds;buildRoute(lds);}},200);};})(log.date));
+          bStart.textContent='📋 Prepare Route';bStart.addEventListener('click',(function(lid,cid2){return function(){openPrepareRouteModal(lid,cid2);};})(log.id,log.clientId));
           bResched.addEventListener('click',function(){
             var nd=prompt('New date (YYYY-MM-DD):',log.date);if(!nd)return;
             var li2=logs.findIndex(function(l){return l.id===lid;});
