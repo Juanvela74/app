@@ -1063,8 +1063,13 @@ function renderLogByDate(el){
       var d=new Date(ds+'T12:00:00');
       var isToday=ds===today;
       var dHdr=document.createElement('div');
-      dHdr.style.cssText='background:'+(isToday?'var(--tl)':isUpcoming?'#f1f5f9':'var(--gy)')+';color:'+(isToday?'#fff':'var(--dk)')+';border-radius:8px;padding:8px 14px;margin-bottom:6px;font-size:13px;font-weight:600;display:flex;justify-content:space-between';
-      dHdr.innerHTML='<span>'+(isToday?'TODAY — ':'')+d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})+'</span><span style="font-size:12px;opacity:.7">'+dayLogs.length+' visit'+(dayLogs.length>1?'s':'')+'</span>';
+      // Alternating month colors for visual separation
+      var monthKey=d.getFullYear()+'-'+d.getMonth();
+      var monthColors=['#1A5276','#0F766E','#7C3AED','#B45309','#1D4ED8','#065F46','#9D174D','#92400E','#1E3A5F','#134E4A','#4C1D95','#78350F'];
+      var monthIdx=Math.abs((d.getFullYear()*12+d.getMonth()))%monthColors.length;
+      var monthColor=isToday?'var(--tl)':isUpcoming?monthColors[monthIdx]:'#94a3b8';
+      dHdr.style.cssText='background:'+monthColor+';color:#fff;border-radius:8px;padding:10px 16px;margin-bottom:6px;margin-top:4px;font-size:14px;font-weight:700;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.15)';
+      dHdr.innerHTML='<span>'+(isToday?'🔔 TODAY — ':'')+d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})+'</span><span style="font-size:12px;opacity:.85;background:rgba(255,255,255,.2);padding:2px 8px;border-radius:10px">'+dayLogs.length+' visit'+(dayLogs.length>1?'s':'')+'</span>';
       el.appendChild(dHdr);
       dayLogs.forEach(function(log){
         var isScheduled=log.status==='Scheduled';
