@@ -1411,10 +1411,11 @@ function buildReceiptHTML(logId, clientId){
   var reSvcAmt=isRE?(isFirstSvc?reSetup+RE_MONTHLY:RE_MONTHLY):c.rate;
   var svcAmt=isRE?reSvcAmt:c.rate;
   // Vents: pending on first service, charged after 28 days
+  // Vents: pending on first service, charged ONLY on month 2 (28-60 days after first)
   var firstSvcDate=allSvcLogs.length>0?allSvcLogs[allSvcLogs.length-1].date:thisLog.date;
   var daysSince=Math.floor((new Date(thisLog.date+'T12:00:00')-new Date(firstSvcDate+'T12:00:00'))/(1000*60*60*24));
   var showEVPending=isFirstSvc&&ev>0;
-  var showEVCharged=!isFirstSvc&&ev>0&&daysSince>=28;
+  var showEVCharged=!isFirstSvc&&ev>0&&daysSince>=28&&daysSince<=65;
   var evTotal=showEVCharged?evc:0;
   var extItems=thisLog.extras||[];
   var extTotal=extItems.reduce(function(s,e){return s+e.p;},0);
@@ -1811,7 +1812,7 @@ function buildPortal(id){
       if(firstSvc&&log.date&&firstSvc.date!==log.date)
         days2=Math.floor((new Date(log.date+'T12:00:00')-new Date(firstSvc.date+'T12:00:00'))/(1000*60*60*24));
       if(isFirst2&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--ok)">⚡ Extra vents ('+ev2+'×$'+evPrice2+') — charged month 2</span><span style="font-weight:600;color:var(--ok)">Pending</span></div>';
-      if(!isFirst2&&days2>=28&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--gd)">Extra vents ('+ev2+'×$'+evPrice2+')</span><span style="font-weight:600;color:var(--gd)">$'+evc2+'</span></div>';
+      if(!isFirst2&&days2>=28&&days2<=65&&ev2>0)return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--gd)">Extra vents ('+ev2+'×$'+evPrice2+')</span><span style="font-weight:600;color:var(--gd)">$'+evc2+'</span></div>';
       return '';
     })())
     +((function(){var fp3=FP[c.plan]||35;var tf3=(c.f1q||1)+(c.f2q||0);var ef3=Math.max(0,tf3-2);var efc3=ef3*fp3;return efc3>0?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f5f5f5"><span style="color:var(--tl)">Extra filters ('+ef3+'×$'+fp3+')</span><span style="font-weight:600;color:var(--tl)">$'+efc3+'</span></div>':'';})())
