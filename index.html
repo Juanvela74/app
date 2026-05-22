@@ -859,20 +859,19 @@ function openPrepareRouteModal(logId, clientId){
     var nsc=document.getElementById('pr-scent').value;
     logs[li].date=nd;logs[li].time=nt;
     logs[li].tech=document.getElementById('pr-tech').value;
-    logs[li].clientScent=nsc;logs[li].notes=document.getElementById('pr-notes').value;
+    logs[li].clientScent=nsc;
+    logs[li].notes=document.getElementById('pr-notes').value;
     logs[li].extras=currentExtras.slice();
     logs[li].extTotal=currentExtras.reduce(function(s,e){return s+e.p;},0);
-    // Update client scent
+    logs[li].routeReady=true;
     var ci=clients.findIndex(function(x){return x.id===clientId;});
     if(ci>=0)clients[ci].scent=nsc;
     save();
     document.getElementById('mo-svc').classList.remove('on');
-    // Go to Route on that date
-    goPage('route');
-    setTimeout(function(){var rd=document.getElementById('route-date');if(rd){rd.value=nd;buildRoute(nd);}},200);
-    toast('📋 Route prepared for '+nd);
+    if(currentPage==='servicelog')renderPage();
+    toast('✅ Route order saved for '+nd);
   };
-  document.getElementById('ms-save').textContent='📋 Confirm & Go to Route';
+  document.getElementById('ms-save').textContent='✅ Save Route Order';
   document.getElementById('mo-svc').classList.add('on');
 }
 
@@ -1216,9 +1215,9 @@ function renderLogItems(){
         +'<div><div style="font-size:15px;font-weight:600;color:var(--dk)">'+log.clientName+' <span style="font-size:11px;color:#888">'+log.clientId+'</span></div>'
         +'<div style="font-size:12px;color:#888">'+log.plan+' · '+(log.time||'09:00')+(log.tech?' · '+log.tech:'')+'</div></div>'
         +'<div style="text-align:right">'
-        +(isScheduled?'<span style="font-size:11px;background:'+(isToday?'var(--tl)':'#e2e8f0')+';color:'+(isToday?'#fff':'#64748b')+';padding:2px 8px;border-radius:10px">'+(isToday?'🔔 TODAY':'📅 Scheduled')+'</span>'
+        +(isScheduled?'<span style="font-size:11px;background:'+(isToday?'var(--tl)':log.routeReady?'#16A34A':'#e2e8f0')+';color:'+(isToday?'#fff':log.routeReady?'#fff':'#64748b')+';padding:2px 8px;border-radius:10px">'+(isToday?'🔔 TODAY':log.routeReady?'✅ Route Ready':'📅 Scheduled')+'</span>'
+          +'<div style="font-size:11px;color:#888;margin-top:2px">'+(log.extras&&log.extras.length?log.extras.map(function(e){return '+ '+e.n+' $'+e.p;}).join(' · '):'No extras')+(log.clientScent?' · 🌿 '+log.clientScent:'')+'</div>'
           :'<div style="font-size:12px;color:#888;font-weight:600">$'+logDisplayAmt(log)+'</div>')
-        +'</div></div>'
         +(done.length?'<div style="background:var(--tll);border-radius:8px;padding:8px 12px;margin-bottom:8px">'+done.map(function(w){return '<div style="font-size:13px;color:#444;padding:1px 0">'+w+'</div>';}).join('')+'</div>':'')
         +'<div style="display:flex;gap:6px;flex-wrap:wrap" id="log-btns-'+log.id+'"></div>'
         +'</div>';
