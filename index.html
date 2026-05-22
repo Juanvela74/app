@@ -974,6 +974,15 @@ function openCompleteVisitModal(logId, clientId){
     // Extra vents: pending on first visit
     var evPending2=isFirst&&svEv2>0;
     var evPrice2=B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;
+    // Check if extra vents should be charged this visit (month 2 = 28+ days after first service)
+    var allSvcDone=logs.filter(function(l){return l.clientId===clientId&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
+    var firstSvcLog=allSvcDone.length>0?allSvcDone[allSvcDone.length-1]:null;
+    var daysSinceFirst=firstSvcLog&&log.date?Math.floor((new Date(log.date+'T12:00:00')-new Date(firstSvcLog.date+'T12:00:00'))/(1000*60*60*24)):0;
+    var evCharged2=!isFirst&&svEv2>0&&daysSinceFirst>=28&&daysSinceFirst<=65;
+    var evAmt2=evCharged2?svEv2*evPrice2:0;
+    var newScent2=g('sv-scent-new')||c.scent||'';
+    if(newScent2&&ci2>=0)clients[ci2].scent=newScent2;
+    var total2=baseRate2+extTotal2+b2bSetup2+evAmt2;
     var chk=function(id){var el=document.getElementById(id);return el&&el.type==='checkbox'?el.checked:false;};
     var li2=logs.findIndex(function(l){return l.id===logId;});
     if(li2<0){toast('❌ Error: visit not found');return;}
@@ -992,6 +1001,9 @@ function openCompleteVisitModal(logId, clientId){
     logs[li2].isFirstSvc=isFirst;
     logs[li2].baseRate=baseRate2;
     logs[li2].evPending=evPending2;
+    logs[li2].evCharged=evCharged2;
+    logs[li2].evPrice=evPrice2;
+    logs[li2].evCount=svEv2;
     logs[li2].evPrice=evPrice2;
     logs[li2].evCount=svEv2;
     // Update client next visit
