@@ -347,7 +347,11 @@ function buildClientsTable(data){
     var bDel=document.createElement('button');bDel.className='btn bs';bDel.style.cssText='padding:6px 12px;font-size:12px;background:#FCEBEB;color:#A32D2D;border:1px solid #F7C1C1;border-radius:8px;cursor:pointer';bDel.textContent='🗑️';
     (function(id){
       bEdit.addEventListener('click',function(){openEditClient(id);});
-      bVisit.addEventListener('click',function(){openSvcModal(id);});
+      bVisit.addEventListener('click',(function(cid){return function(){
+        var nextLog=logs.filter(function(l){return l.clientId===cid&&l.status==='Scheduled';}).sort(function(a,b){return a.date.localeCompare(b.date);})[0];
+        if(nextLog)openCompleteVisitModal(nextLog.id,cid);
+        else toast('No scheduled visits found — check Service Log');
+      };})(id));
       bReceipt.addEventListener('click',(function(cid){return function(){var lastL=logs.filter(function(l){return l.clientId===cid&&l.status!=='Scheduled';}).sort(function(a,b){return b.date.localeCompare(a.date);})[0];openReceiptModal(cid,lastL?lastL.id:null);};})(id));
       bReschedule.addEventListener('click',function(){openRescheduleClient(id);});
       bStatus.addEventListener('click',function(){toggleClientStatus(id);});
@@ -876,6 +880,9 @@ function openCompleteVisitModal(logId, clientId){
   if(svVentsEl2){svVentsEl2.addEventListener('input',updateSvVents2);updateSvVents2();}
   // Override save button to complete THIS scheduled visit
   document.getElementById('ms-save').onclick=function(){
+    // ONLY updates the existing scheduled log — never creates new
+    var li2=logs.findIndex(function(l){return l.id===logId;});
+    if(li2<0){toast('Error: log not found');return;}
     var g=function(id){var el=document.getElementById(id);return el?el.value:'';};
     var extTotal2=currentExtras.reduce(function(s,e){return s+e.p;},0);
     var svV2=parseInt(g('sv-vents'))||c.vents||10;
@@ -1296,6 +1303,8 @@ function renderExtras(){
 }
 
 function saveSvc(){
+  // This only runs from the manual "+ Log Visit" modal (openSvcModal)
+  // openCompleteVisitModal has its own save via ms-save.onclick
   var cid=document.getElementById('sv-c')?document.getElementById('sv-c').value:'';
   if(!cid){toast('⚠️ Select a client');return;}
   var c=clients.find(function(x){return x.id===cid;});if(!c)return;
@@ -1387,7 +1396,8 @@ function showReceipt(logId, clientId){
     var svcDesc=c.plan==='Real Estate'?
       (log.isFirstSvc?'Duct cleaning & sanitization · filter change · diffuser installed · showing-day scenting':'Diffuser maintenance · scent refill · showing-day service'):
       'Duct cleaning & sanitization · scent refill · '+(FT[c.plan]||'MERV 11')+' filters · '+(INC_V[c.plan]||10)+' vents included';
-    rows+='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">'+svcLabel+'<br><span style="font-size:11px;color:#888">'+svcDesc+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+log.baseRate+'</td></tr>';
+    var displayBase=log.baseRate||(log.total-(log.extTotal||0)-(log.setup||0))||c.rate;
+    rows+='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">'+svcLabel+'<br><span style="font-size:11px;color:#888">'+svcDesc+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+displayBase+'</td></tr>';
     if(log.setup>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:var(--lt)"><td style="padding:10px 12px;font-size:13px">Contract & Plan Activation<br><span style="font-size:11px;color:var(--md)">One-time · first visit</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+log.setup+'</td></tr>';
     if(log.evPending&&log.evCount>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#F5FFF5"><td style="padding:10px 12px;font-size:13px">Extra vents ('+log.evCount+'×$'+log.evPrice+')<br><span style="font-size:11px;color:var(--ok)">⚡ Charged on next visit (month 2)</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--ok)">Pending</td></tr>';
     if(log.evCharged&&log.evCount>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#FFFBF0"><td style="padding:10px 12px;font-size:13px">Extra vents ('+log.evCount+'×$'+log.evPrice+')</td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--gd)">$'+(log.evCount*log.evPrice)+'</td></tr>';
