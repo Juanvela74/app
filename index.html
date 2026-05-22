@@ -215,7 +215,8 @@ function load(){
     // Recalculate rate for every client to fix any stale/wrong prices
     clients.forEach(function(cl){
       var isRE=cl.plan==='Real Estate';
-      if(isRE){cl.rate=RE_MONTHLY;return;} // RE monthly is always $49
+      var isCB=cl.plan&&cl.plan.includes('Construction');
+      if(isRE){cl.rate=RE_MONTHLY;return;}
       var base=PRICES[cl.plan]?PRICES[cl.plan][cl.size||'medium']||0:0;
       var sec=cl.units==='2'?Math.round(base*0.5):0;
       var correct=base+sec;
@@ -725,7 +726,9 @@ function saveClient(mode){
   var baseRate=PRICES[planVal]?PRICES[planVal][sizeVal]||0:0;
   var secRate=unitsVal==='2'?Math.round(baseRate*0.5):0;
   var isREplan2=planVal==='Real Estate';
-  var calculatedRate=isREplan2?49:(baseRate+secRate);
+  var isCBplan2=planVal&&planVal.includes('Construction');
+  var isCPplan2=planVal==='Casa Piloto';
+  var calculatedRate=isREplan2?RE_MONTHLY:(baseRate+secRate);
   var savedRate=parseInt(g('f-rate'))||0;
   var finalRate=savedRate>0?savedRate:calculatedRate;
   var client={
@@ -905,7 +908,7 @@ function openCompleteVisitModal(logId, clientId){
     +'<div style="display:flex;flex-direction:column;gap:8px">'
     +'<label style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8fafc;border-radius:8px;cursor:pointer;font-size:14px"><input type="checkbox" id="chk-ducts" checked style="width:18px;height:18px"> Duct cleaning & sanitization</label>'
     +'<label style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8fafc;border-radius:8px;cursor:pointer;font-size:14px"><input type="checkbox" id="chk-filter" checked style="width:18px;height:18px"> Filter change ('+(c.f1q||1)+'x '+ft+(c.f2q>0?' + '+c.f2q+'x':'')+') </label>'
-    +'<label style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8fafc;border-radius:8px;cursor:pointer;font-size:14px"><input type="checkbox" id="chk-scent" checked style="width:18px;height:18px"> Diffuser refill — '+(log.clientScent||c.scent||'fragrance')+'</label>'
+    +(isREplan||(!c.plan.includes('Construction'))?'<label style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8fafc;border-radius:8px;cursor:pointer;font-size:14px"><input type="checkbox" id="chk-scent" checked style="width:18px;height:18px"> Diffuser refill — '+(log.clientScent||c.scent||'fragrance')+'</label>':'<input type="hidden" id="chk-scent" value="">')
     +(c.plan==='Luxury Air'?'<label style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8fafc;border-radius:8px;cursor:pointer;font-size:14px"><input type="checkbox" id="chk-benef" checked style="width:18px;height:18px"> Benefect Decon 30 sanitization</label>':'<input type="hidden" id="chk-benef" value="">')
     +(scheduledExtras.map(function(e,i){return '<label style="display:flex;align-items:center;gap:10px;padding:10px;background:#FFF8F0;border:1px solid #FAD7A0;border-radius:8px;cursor:pointer;font-size:14px"><input type="checkbox" id="chk-extra-'+i+'" checked style="width:18px;height:18px"> '+e.n+' <strong style="color:var(--er)">$'+e.p+'</strong></label>';}).join(''))
     +'</div></div>'
@@ -1149,6 +1152,7 @@ function openEditSvcModal(logId){
   document.getElementById('ms-body').innerHTML=
     '<div style="background:var(--lt);border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:13px">'
     +'<strong>'+c.name+'</strong> · '+c.plan+' · '+(isScheduled?'📅 Scheduled: '+log.date:'✅ Completed: '+log.date)+'</div>'
+    +(isScheduled&&log.routeReady?'<div style="background:#FEF9E7;border:1px solid #FAC775;border-radius:8px;padding:8px 12px;margin-bottom:1rem;font-size:12px;color:#854F0B">⚠️ Route Ready — editing will reset it. Re-prepare after saving.</div>':'')
     +'<div class="fg">'
     +'<div><label>Date</label><input type="date" id="sv-d" value="'+log.date+'"></div>'
     +'<div><label>Time</label><input type="time" id="sv-t" value="'+log.time+'"></div>'
@@ -1174,6 +1178,7 @@ function openEditSvcModal(logId){
     logs[li].notes=document.getElementById('sv-n').value;
     logs[li].extras=currentExtras.slice();
     logs[li].extTotal=currentExtras.reduce(function(s,e){return s+e.p;},0);
+    logs[li].routeReady=false; // reset — must re-prepare route after edit
     var newScent=document.getElementById('sv-scent-edit')?document.getElementById('sv-scent-edit').value:'';
     if(newScent){logs[li].clientScent=newScent;var ci2=clients.findIndex(function(x){return x.id===log.clientId;});if(ci2>=0)clients[ci2].scent=newScent;}
     save();
@@ -1457,11 +1462,16 @@ function showReceipt(logId, clientId){
     rows+='<tr style="background:var(--tll)"><td style="padding:12px;font-weight:700;color:var(--tl);font-size:14px">TOTAL TODAY</td><td style="padding:12px;text-align:right;font-weight:700;color:var(--tl);font-size:20px">$'+evalTotal+'</td></tr>';
   } else if(log){
     // Service receipt — 100% from stored log data
-    var svcLabel=log.isFirstSvc?
-      (c.plan==='Real Estate'?'Real Estate — First Service':'Monthly Service — '+c.plan+' (First Visit)'):
-      (c.plan==='Real Estate'?'Real Estate — Monthly Maintenance':'Monthly Service — '+c.plan);
-    var svcDesc=c.plan==='Real Estate'?
-      (log.isFirstSvc?'Duct cleaning & sanitization · filter change · diffuser installed · showing-day scenting':'Diffuser maintenance · scent refill · showing-day service'):
+    var isCP2=c.plan==='Casa Piloto';
+    var isCB2=c.plan&&c.plan.includes('Construction');
+    var isRES=c.plan==='Real Estate';
+    var svcLabel=isCB2?'Construction Cleaning — '+c.plan:
+      isCP2?(log.isFirstSvc?'Casa Piloto — First Month':'Casa Piloto — Monthly Service'):
+      isRES?(log.isFirstSvc?'Real Estate — First Service':'Real Estate — Monthly Maintenance'):
+      log.isFirstSvc?c.plan+' — First Visit':'Monthly Service — '+c.plan;
+    var svcDesc=isCB2?'Post-construction deep clean · duct sanitization · dust removal':
+      isCP2?'Monthly pilot home · fragrance active · filter + report':
+      isRES?(log.isFirstSvc?'Duct cleaning & sanitization · filter change · diffuser installed · showing-day scenting':'Diffuser maintenance · scent refill · showing-day service'):
       'Duct cleaning & sanitization · scent refill · '+(FT[c.plan]||'MERV 11')+' filters · '+(INC_V[c.plan]||10)+' vents included';
     var displayBase=log.baseRate||(log.total-(log.extTotal||0)-(log.setup||0))||c.rate;
     rows+='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">'+svcLabel+'<br><span style="font-size:11px;color:#888">'+svcDesc+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+displayBase+'</td></tr>';
@@ -1469,6 +1479,7 @@ function showReceipt(logId, clientId){
     if(log.evPending&&log.evCount>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#F5FFF5"><td style="padding:10px 12px;font-size:13px">Extra vents ('+log.evCount+'×$'+log.evPrice+')<br><span style="font-size:11px;color:var(--ok)">⚡ Charged on next visit (month 2)</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--ok)">Pending</td></tr>';
     if(log.evCharged&&log.evCount>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#FFFBF0"><td style="padding:10px 12px;font-size:13px">Extra vents ('+log.evCount+'×$'+log.evPrice+')</td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--gd)">$'+(log.evCount*log.evPrice)+'</td></tr>';
     (log.extras||[]).forEach(function(e){rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#FFF8F0"><td style="padding:10px 12px;font-size:13px">+ '+e.n+'</td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--er)">$'+e.p+'</td></tr>';});
+    (log.adjustments||[]).forEach(function(a){rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#FEF9E7"><td style="padding:10px 12px;font-size:13px">📝 Adjustment: '+a.n+'</td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--er)">$'+a.p+'</td></tr>';});
     rows+='<tr style="background:var(--tll)"><td style="padding:12px;font-weight:700;color:var(--tl);font-size:14px">TOTAL THIS VISIT</td><td style="padding:12px;text-align:right;font-weight:700;color:var(--tl);font-size:20px">$'+log.total+'</td></tr>';
   } else {
     rows='<tr><td colspan="2" style="padding:20px;text-align:center;color:#888">No service record found</td></tr>';
@@ -1790,9 +1801,33 @@ function buildPortal(id){
       +(isEval?'<span style="font-size:10px;background:#e2e8f0;color:#475569;padding:2px 6px;border-radius:8px">CONTRACT</span>':'')
       +'</div></div>'
       +(done.length?'<div style="background:var(--tll);border-radius:6px;padding:6px 10px;margin-bottom:8px;font-size:12px;color:var(--tl)">'+done.join(' · ')+'</div>':'')
+      // Adjustments
+      +((log.adjustments||[]).map(function(a){return '<div style="background:#FEF9E7;border-radius:6px;padding:5px 10px;margin-bottom:6px;font-size:12px;display:flex;justify-content:space-between"><span style="color:#854F0B">📝 '+a.n+'</span><span style="font-weight:600;color:var(--er)">$'+a.p+'</span></div>';}).join(''))
       +'<div style="background:#fafafa;border-radius:8px;padding:10px 12px;border:1px solid #f0f0f0">'+items+'</div>'
+      // Photos placeholders
+      +(!isEval?'<div style="margin-top:10px"><div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">📷 Service Photos</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">'
+      +['Before 1','Before 2','After 1','After 2'].map(function(l){return '<div style="aspect-ratio:1;background:#f1f5f9;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:18px;color:#94a3b8">📷<div style="font-size:9px;margin-top:2px;color:#94a3b8">'+l+'</div></div>';}).join('')
+      +'</div><div style="font-size:10px;color:#94a3b8;text-align:center;margin-top:4px">Photos available once database is connected</div></div>':'')
+      // Add adjustment button (only for completed non-eval)
+      +(!isEval?'<div style="margin-top:8px;text-align:right"><button onclick="addAdjustment(\''+log.id+'\',\''+id+'\')" style="padding:5px 12px;font-size:11px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer">+ Add Adjustment</button></div>':'')
       +'</div>';
   }).join(''));
+}
+
+function addAdjustment(logId, clientId){
+  var n=prompt('Adjustment description:');
+  if(!n)return;
+  var p=parseFloat(prompt('Amount ($):'));
+  if(isNaN(p)||p<=0){toast('⚠️ Invalid amount');return;}
+  var li=logs.findIndex(function(l){return l.id===logId;});
+  if(li<0)return;
+  if(!logs[li].adjustments)logs[li].adjustments=[];
+  logs[li].adjustments.push({n:n,p:p});
+  logs[li].total=(logs[li].total||0)+p;
+  save();
+  buildPortal(clientId);
+  toast('✅ Adjustment added: $'+p);
 }
 
 // ── PAGE EVENTS ───────────────────────────────────────────────────────────
