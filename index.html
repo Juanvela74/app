@@ -192,27 +192,19 @@ var editingClientId=null;
 // ── STORAGE ───────────────────────────────────────────────────────────────
 function save(){try{localStorage.setItem('ppc_c',JSON.stringify(clients));localStorage.setItem('ppc_l',JSON.stringify(logs));}catch(e){}}
 
-// Calculate correct display amount for a completed log (fixes stale log.total)
+// Calculate correct display amount — uses stored log data
 function logDisplayAmt(log){
   if(!log||log.status==='Scheduled')return 0;
-  if(log.visitType==='evaluation'){
-    var c2=clients.find(function(x){return x.id===log.clientId;});
-    if(!c2)return log.total||0;
-    var isRE2=c2.plan==='Real Estate';
-    var reSize2=c2.size||'medium';
-    return isRE2?(RE_SETUP[reSize2]||350)+RE_MONTHLY:175;
-  }
+  // Always use stored total if available
+  if(log.total&&log.total>0)return log.total;
+  // Fallback for old logs without stored total
   var c2=clients.find(function(x){return x.id===log.clientId;});
-  if(!c2)return log.total||0;
-  var hadEval=!!logs.find(function(l){return l.clientId===log.clientId&&l.visitType==='evaluation';});
-  var svcLogs=logs.filter(function(l){return l.clientId===log.clientId&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
-  var isFirst=svcLogs.indexOf(log)===svcLogs.length-1;
-  var isRE=c2.plan==='Real Estate';
-  var reSize3=c2.size||'medium';
-  var setup=isFirst&&!isRE&&!hadEval?175:0;
-  var base=isRE?(isFirst?(RE_SETUP[reSize3]||350)+RE_MONTHLY:RE_MONTHLY):(c2.rate+setup);
-  var extras=(log.extras||[]).reduce(function(s,e){return s+e.p;},0);
-  return base+extras;
+  if(!c2)return 0;
+  if(log.visitType==='evaluation'){
+    var isRE2=c2.plan==='Real Estate';
+    return isRE2?(RE_SETUP[c2.size||'medium']||350)+RE_MONTHLY:175;
+  }
+  return c2.rate;
 }
 function load(){
   try{
@@ -890,15 +882,16 @@ function openCompleteVisitModal(logId, clientId){
     var svEv2=parseInt(g('sv-ev'))||0;
     var ci2=clients.findIndex(function(x){return x.id===clientId;});
     if(ci2>=0&&svV2!==clients[ci2].vents)clients[ci2].vents=svV2;
-    var b2bSetup2=typeof B2B_SETUP!=='undefined'&&B2B_SETUP[c.plan]!==undefined?B2B_SETUP[c.plan]:175;
     var hadEval2=!!logs.find(function(l){return l.clientId===clientId&&l.visitType==='evaluation';});
-    var setup2=isFirst&&!isREplan&&!hadEval2?b2bSetup2:0;
-    var baseRate2=isREplan?(isFirst?199:49):c.rate;
-    // Never include pending vents in total (they are charged on visit 2, not here)
-    var total2=baseRate2+extTotal2+(isREplan?0:setup2);
+    var b2bSetup2=!isREplan&&isFirst&&!hadEval2?(B2B_SETUP[c.plan]||175):0;
+    var reSetupNow=RE_SETUP[c.size||'medium']||350;
+    var baseRate2=isREplan?(isFirst?reSetupNow+RE_MONTHLY:RE_MONTHLY):c.rate;
+    var total2=baseRate2+extTotal2+(isREplan?0:b2bSetup2);
     var newScent2=g('sv-scent-new')||c.scent||'';
     if(newScent2&&ci2>=0)clients[ci2].scent=newScent2;
-    // Update the scheduled log → Completed
+    // Extra vents: pending on first visit
+    var evPending=isFirst&&svEv2>0;
+    var evPrice2=B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;
     var li2=logs.findIndex(function(l){return l.id===logId;});
     if(li2>=0){
       logs[li2].status='Completed';
@@ -907,8 +900,13 @@ function openCompleteVisitModal(logId, clientId){
       logs[li2].benef=g('sv-b');logs[li2].diff=g('sv-dif');logs[li2].rating=parseInt(g('sv-r'))||5;
       logs[li2].notes=g('sv-n');logs[li2].vents=svV2;logs[li2].extraVents=svEv2;
       logs[li2].extras=currentExtras.slice();logs[li2].extTotal=extTotal2;
-      logs[li2].setup=setup2;logs[li2].total=total2;
+      logs[li2].setup=b2bSetup2;logs[li2].total=total2;
       logs[li2].clientScent=newScent2;
+      logs[li2].isFirstSvc=isFirst;
+      logs[li2].baseRate=baseRate2;
+      logs[li2].evPending=evPending;
+      logs[li2].evPrice=evPrice2;
+      logs[li2].evCount=svEv2;
     }
     // Update client next visit to next scheduled date
     var nextSch=logs.filter(function(l){return l.clientId===clientId&&l.status==='Scheduled'&&l.date>g('sv-d');}).sort(function(a,b){return a.date.localeCompare(b.date);})[0];
@@ -1271,11 +1269,11 @@ function openSvcModal(clientId){
     if(svVEl&&c3)svVEl.value=c3.vents||INC_V[c3.plan]||10;
     updateSvVents();
   });}
+  document.getElementById('ms-save').onclick=saveSvc;
   document.getElementById('mo-svc').classList.add('on');
 }
 
 function addExtra(item){
-  var p=item.p;var n=item.n;
   if(item.custom){n=prompt('Service name:');if(!n)return;p=parseFloat(prompt('Price ($):')||0);}
   currentExtras.push({n:n,p:p});
   renderExtras();
@@ -1315,8 +1313,8 @@ function saveSvc(){
   // Update client vents if changed during visit
   var ci0=clients.findIndex(function(x){return x.id===cid;});
   if(ci0>=0&&svVentsVal!==clients[ci0].vents)clients[ci0].vents=svVentsVal;
-  // RE first visit = $199 flat (includes $150 setup + $49 monthly), subsequent = $49
-  var baseRate=isREplan?(isFirst?199:49):c.rate;
+  var reSetupSvc=RE_SETUP[c.size||'medium']||350;
+  var baseRate=isREplan?(isFirst?reSetupSvc+RE_MONTHLY:RE_MONTHLY):c.rate;
   var total=baseRate+extTotal+(isREplan?0:setup);
   var g=function(id){var el=document.getElementById(id);return el?el.value:'';};
   var newScent=g('sv-scent-new')||c.scent||'';
@@ -1356,146 +1354,85 @@ function saveSvc(){
 // ── RECEIPT ───────────────────────────────────────────────────────────────
 // Central receipt builder — always pass both logId AND clientId
 // logId = specific log to show; clientId = client data
-function buildReceiptHTML(logId, clientId){
-  var c=clients.find(function(x){return x.id===clientId;});
-  if(!c)return '<p>Client not found</p>';
+// ── RECEIPT ── One function, one log, what was saved is what shows ──────────
+function showReceipt(logId, clientId){
   var log=logId?logs.find(function(l){return l.id===logId;}):null;
-  var isRE=c.plan==='Real Estate';
-  var isCP=c.plan==='Casa Piloto';
-  var isCB=c.plan&&c.plan.includes('Construction');
-  var isB2Bplan=isRE||isCP||isCB;
+  var c=clients.find(function(x){return x.id===clientId;});
+  if(!c){toast('Client not found');return;}
 
-  // ── EVALUATION RECEIPT ──────────────────────────────────────────────────
-  if(log&&log.visitType==='evaluation'){
-    var evalDate=new Date(log.date+'T12:00:00').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
-    var rnum='PPC-'+log.id.slice(-6);
-    var nextSvc=logs.filter(function(l){return l.clientId===clientId&&l.status==='Scheduled';}).sort(function(a,b){return a.date.localeCompare(b.date);})[0];
-    var reSize=c.size||'medium';
-    var reSetupFee=isRE?(RE_SETUP[reSize]||350):175;
-    var reMonthlyFee=isRE?RE_MONTHLY:0;
-    var evalTotal=reSetupFee+reMonthlyFee;
-    var rows='';
-    if(isRE){
-      rows+='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">Duct Cleaning & Sanitization — '+reSize.charAt(0).toUpperCase()+reSize.slice(1)+' Home<br><span style="font-size:11px;color:#888">Full duct cleaning · filter change · photos · showing-day diffuser setup</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+reSetupFee+'</td></tr>';
-      rows+='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">First Month — Diffuser & Scenting Service<br><span style="font-size:11px;color:#888">Fragrance active on showing days · monthly maintenance</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+reMonthlyFee+'</td></tr>';
-    } else {
-      rows+='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">Contract & Plan Activation — '+c.plan+'<br><span style="font-size:11px;color:#888">Plan registered · diffuser reserved · first service: '+(nextSvc?nextSvc.date:'TBD')+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+reSetupFee+'</td></tr>';
-    }
+  var isEval=log&&log.visitType==='evaluation';
+  var date=log?new Date(log.date+'T12:00:00').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}):new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+  var rnum='PPC-'+(log?log.id.slice(-6):Date.now().toString().slice(-6));
+  var nextSch=logs.filter(function(l){return l.clientId===clientId&&l.status==='Scheduled';}).sort(function(a,b){return a.date.localeCompare(b.date);})[0];
+  var nextDate=c.next||( nextSch?nextSch.date:'TBD');
+  var nextTime=nextSch?nextSch.time:c.time||'';
+
+  var rows='';
+
+  if(isEval){
+    // Evaluation/contract receipt — uses stored setup+total from eval log
+    var evalSetup=log.setup||175;
+    var evalMonthly=(c.plan==='Real Estate')?RE_MONTHLY:0;
+    var evalTotal=log.total||(evalSetup+evalMonthly);
+    var evalLabel=c.plan==='Real Estate'?'Duct Cleaning & Sanitization — Real Estate':'Contract & Plan Activation — '+c.plan;
+    var evalDesc=c.plan==='Real Estate'?'Full duct clean · filter change · diffuser reserved · showing-day setup':'Plan registered · diffuser reserved · first service: '+nextDate;
+    rows+='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">'+evalLabel+'<br><span style="font-size:11px;color:#888">'+evalDesc+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+evalSetup+'</td></tr>';
+    if(evalMonthly>0)rows+='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">First Month — '+c.plan+'<br><span style="font-size:11px;color:#888">Monthly maintenance · fragrance active on showing days</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+evalMonthly+'</td></tr>';
     rows+='<tr style="background:var(--tll)"><td style="padding:12px;font-weight:700;color:var(--tl);font-size:14px">TOTAL TODAY</td><td style="padding:12px;text-align:right;font-weight:700;color:var(--tl);font-size:20px">$'+evalTotal+'</td></tr>';
-    return buildReceiptWrapper(c, rnum, evalDate, rows, nextSvc, isRE?'Real Estate Service Agreement':'Contract Signed');
+  } else if(log){
+    // Service receipt — 100% from stored log data
+    var svcLabel=log.isFirstSvc?
+      (c.plan==='Real Estate'?'Real Estate — First Service':'Monthly Service — '+c.plan+' (First Visit)'):
+      (c.plan==='Real Estate'?'Real Estate — Monthly Maintenance':'Monthly Service — '+c.plan);
+    var svcDesc=c.plan==='Real Estate'?
+      (log.isFirstSvc?'Duct cleaning & sanitization · filter change · diffuser installed · showing-day scenting':'Diffuser maintenance · scent refill · showing-day service'):
+      'Duct cleaning & sanitization · scent refill · '+(FT[c.plan]||'MERV 11')+' filters · '+(INC_V[c.plan]||10)+' vents included';
+    rows+='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">'+svcLabel+'<br><span style="font-size:11px;color:#888">'+svcDesc+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+log.baseRate+'</td></tr>';
+    if(log.setup>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:var(--lt)"><td style="padding:10px 12px;font-size:13px">Contract & Plan Activation<br><span style="font-size:11px;color:var(--md)">One-time · first visit</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+log.setup+'</td></tr>';
+    if(log.evPending&&log.evCount>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#F5FFF5"><td style="padding:10px 12px;font-size:13px">Extra vents ('+log.evCount+'×$'+log.evPrice+')<br><span style="font-size:11px;color:var(--ok)">⚡ Charged on next visit (month 2)</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--ok)">Pending</td></tr>';
+    if(log.evCharged&&log.evCount>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#FFFBF0"><td style="padding:10px 12px;font-size:13px">Extra vents ('+log.evCount+'×$'+log.evPrice+')</td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--gd)">$'+(log.evCount*log.evPrice)+'</td></tr>';
+    (log.extras||[]).forEach(function(e){rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#FFF8F0"><td style="padding:10px 12px;font-size:13px">+ '+e.n+'</td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--er)">$'+e.p+'</td></tr>';});
+    rows+='<tr style="background:var(--tll)"><td style="padding:12px;font-weight:700;color:var(--tl);font-size:14px">TOTAL THIS VISIT</td><td style="padding:12px;text-align:right;font-weight:700;color:var(--tl);font-size:20px">$'+log.total+'</td></tr>';
+  } else {
+    rows='<tr><td colspan="2" style="padding:20px;text-align:center;color:#888">No service record found</td></tr>';
   }
 
-  // ── SERVICE RECEIPT ──────────────────────────────────────────────────────
-  // Use the specific log passed, or fall back to most recent service log
-  var allSvcLogs=logs.filter(function(l){return l.clientId===clientId&&l.status!=='Scheduled'&&l.visitType!=='evaluation';});
-  var thisLog=log||allSvcLogs[0];
-  if(!thisLog){return '<p>No service record found</p>';}
-  var logDate=new Date(thisLog.date+'T12:00:00').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
-  var rnum='PPC-'+thisLog.id.slice(-6);
-  var hadEval=!!logs.find(function(l){return l.clientId===clientId&&l.visitType==='evaluation';});
-  var isFirstSvc=(allSvcLogs.indexOf(thisLog)===allSvcLogs.length-1);
-  var incV=INC_V[c.plan]||10;
-  var ev=Math.max(0,(c.vents||0)-incV);
-  var evPrice=B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;
-  var evc=ev*evPrice;
-  var ft=FT[c.plan]||'MERV 11';
-  var fp2=FP[c.plan]||35;
-  var includedF=c.units==='2'?4:2;
-  var ef2=Math.max(0,((c.f1q||1)+(c.f2q||0))-includedF);
-  var efc2=ef2*fp2;
-  // Setup: only on first service if no eval was done
-  var setup=(!isB2Bplan&&isFirstSvc&&!hadEval)?175:0;
-  // RE first visit pricing
-  var reSize=c.size||'medium';
-  var reSetup=RE_SETUP[reSize]||350;
-  var reSvcAmt=isRE?(isFirstSvc?reSetup+RE_MONTHLY:RE_MONTHLY):c.rate;
-  var svcAmt=isRE?reSvcAmt:c.rate;
-  // Vents: pending on first service, charged after 28 days
-  // Vents: pending on first service, charged ONLY on month 2 (28-60 days after first)
-  var firstSvcDate=allSvcLogs.length>0?allSvcLogs[allSvcLogs.length-1].date:thisLog.date;
-  var daysSince=Math.floor((new Date(thisLog.date+'T12:00:00')-new Date(firstSvcDate+'T12:00:00'))/(1000*60*60*24));
-  var showEVPending=isFirstSvc&&ev>0;
-  var showEVCharged=!isFirstSvc&&ev>0&&daysSince>=28&&daysSince<=65;
-  var evTotal=showEVCharged?evc:0;
-  var extItems=thisLog.extras||[];
-  var extTotal=extItems.reduce(function(s,e){return s+e.p;},0);
-  var grand=(isRE?reSvcAmt:c.rate+setup)+evTotal+extTotal+efc2;
-  // Build rows
-  var svcLabel=isRE?(isFirstSvc?'Real Estate — First Service':'Real Estate — Monthly Maintenance'):
-               isCP?'Casa Piloto — Monthly Service':
-               isCB?'Construction — Post-Build Cleaning':'Monthly Service — '+c.plan;
-  var svcDesc=isRE?(isFirstSvc?'Duct cleaning & sanitization · filter change · diffuser installed · showing-day scenting':'Diffuser maintenance · scent refill · showing-day service'):
-              isCP?'Monthly pilot home service · fragrance + filter + report':
-              isCB?'Post-construction deep clean + disinfection + dust removal':
-              'Duct cleaning & sanitization · scent refill · '+ft+' filters · '+incV+' vents included';
-  var rows='<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:10px 12px;font-size:13px">'+svcLabel+'<br><span style="font-size:11px;color:#888">'+svcDesc+'</span></td><td style="padding:10px 12px;text-align:right;font-weight:600">$'+svcAmt+'</td></tr>';
-  if(setup>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:var(--lt)"><td style="padding:10px 12px;font-size:13px">Contract & Plan Activation<br><span style="font-size:11px;color:var(--md)">One-time · first visit only</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--dk)">$'+setup+'</td></tr>';
-  if(showEVPending)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#F5FFF5"><td style="padding:10px 12px;font-size:13px">Extra vents ('+ev+'×$'+evPrice+' = $'+evc+')<br><span style="font-size:11px;color:var(--ok)">⚡ Will be charged on next visit (month 2)</span></td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--ok)">Pending</td></tr>';
-  if(showEVCharged)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#FFFBF0"><td style="padding:10px 12px;font-size:13px">Extra vents ('+ev+'×$'+evPrice+')</td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--gd)">$'+evc+'</td></tr>';
-  extItems.forEach(function(e){rows+='<tr style="border-bottom:1px solid #f0f0f0;background:#FFF8F0"><td style="padding:10px 12px;font-size:13px">+ '+e.n+'</td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--er)">$'+e.p+'</td></tr>';});
-  if(efc2>0)rows+='<tr style="border-bottom:1px solid #f0f0f0;background:var(--tll)"><td style="padding:10px 12px;font-size:13px">Extra filters ('+ef2+'×$'+fp2+')</td><td style="padding:10px 12px;text-align:right;font-weight:600;color:var(--tl)">$'+efc2+'</td></tr>';
-  rows+='<tr style="background:var(--tll)"><td style="padding:12px;font-weight:700;color:var(--tl);font-size:14px">TOTAL THIS VISIT</td><td style="padding:12px;text-align:right;font-weight:700;color:var(--tl);font-size:20px">$'+grand+'</td></tr>';
-  var nextVisit=c.next||(logs.filter(function(l){return l.clientId===clientId&&l.status==='Scheduled';}).sort(function(a,b){return a.date.localeCompare(b.date);})[0]||{}).date||'TBD';
-  return buildReceiptWrapper(c, rnum, logDate, rows, {date:nextVisit, time:c.time||''}, null);
-}
-
-function buildReceiptWrapper(c, rnum, dateStr, rows, nextVisit, badge){
-  return '<div style="text-align:center;margin-bottom:1.25rem">'
+  var html='<div style="text-align:center;margin-bottom:1.25rem">'
     +'<div style="font-size:20px;font-weight:700;color:var(--dk);font-family:Playfair Display,serif">PrecisionProCare</div>'
     +'<div style="font-size:11px;color:#888">JLM Global Services LLC · 1617 Wake Dr, Wake Forest, NC 27587</div>'
     +'<div style="font-size:11px;color:#888">(919) 398-0003 · service@precisionprocare.com</div></div>'
     +'<div style="display:flex;justify-content:space-between;padding:.75rem 0;border-bottom:1px solid #f0f0f0">'
     +'<div><div style="font-size:10px;color:#888;text-transform:uppercase">Receipt #</div><div style="font-weight:600">'+rnum+'</div></div>'
-    +'<div style="text-align:right"><div style="font-size:10px;color:#888;text-transform:uppercase">Date</div><div style="font-weight:600">'+dateStr+'</div></div></div>'
+    +'<div style="text-align:right"><div style="font-size:10px;color:#888;text-transform:uppercase">Date</div><div style="font-weight:600">'+date+'</div></div></div>'
     +'<div style="background:var(--gy);border-radius:8px;padding:10px 14px;margin:.75rem 0">'
-    +'<div style="font-size:10px;color:#888;text-transform:uppercase;margin-bottom:5px">Bill To</div>'
+    +'<div style="font-size:10px;color:#888;text-transform:uppercase;margin-bottom:4px">Bill To</div>'
     +'<div style="font-weight:600">'+c.name+'</div>'
     +'<div style="font-size:12px;color:#444">'+c.addr+'</div>'
     +'<div style="font-size:12px;color:#444">'+c.phone+'</div></div>'
-    +(badge?'<div style="background:#EAF3DE;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#3B6D11"><strong>'+badge+'</strong> — '+c.plan+' ('+c.size+') · $'+(c.plan==='Real Estate'?RE_MONTHLY:c.rate)+'/mo</div>':'')
     +'<table style="width:100%;border-collapse:collapse">'
     +'<thead><tr style="background:var(--dk)"><th style="padding:8px 12px;text-align:left;color:#fff;font-size:11px">Service</th><th style="padding:8px 12px;text-align:right;color:#fff;font-size:11px">Amount</th></tr></thead>'
     +'<tbody>'+rows+'</tbody></table>'
     +'<div style="text-align:center;font-size:11px;color:var(--tl);margin-top:12px;padding:10px;background:var(--tll);border-radius:8px">'
     +'✦ Thank you for choosing PrecisionProCare ✦<br>'
-    +'<span style="color:#888">Scent: '+(c.scent||'—')+' · Next visit: '+(nextVisit&&nextVisit.date?nextVisit.date:'TBD')+(nextVisit&&nextVisit.time?' @ '+nextVisit.time:'')+'</span></div>';
-}
+    +'<span style="color:#888">Scent: '+(c.scent||'—')+' · Next visit: '+nextDate+(nextTime?' @ '+nextTime:'')+'</span></div>';
 
-// Open receipt modal — always pass logId for correct data
-function openReceiptModal(clientId, logId){
-  var html=buildReceiptHTML(logId||null, clientId);
   document.getElementById('mr-body').innerHTML=html;
   document.getElementById('mo-receipt').classList.add('on');
 }
 
-// Log-specific receipt (from Service Log / Route buttons)
-function openLogReceipt(logId, clientId){
-  openReceiptModal(clientId, logId);
+// All receipt calls go through showReceipt
+function openReceiptModal(clientId,logId){
+  var log=logId?logs.find(function(l){return l.id===logId;}):
+    logs.filter(function(l){return l.clientId===clientId&&l.status!=='Scheduled';}).sort(function(a,b){return b.date.localeCompare(a.date);})[0];
+  showReceipt(log?log.id:null,clientId);
 }
-
-// Evaluation receipt (from Save & Eval flow)
+function openLogReceipt(logId,clientId){showReceipt(logId,clientId);}
 function openEvalReceipt(client){
-  var evalLog=logs.find(function(l){return l.clientId===client.id&&l.visitType==='evaluation';});
-  if(evalLog) openReceiptModal(client.id, evalLog.id);
-  else openReceiptModal(client.id, null);
+  var el=logs.find(function(l){return l.clientId===client.id&&l.visitType==='evaluation';});
+  showReceipt(el?el.id:null,client.id);
 }
-function printReceipt(){var content=document.getElementById('mr-body').innerHTML;var w=window.open('','_blank');w.document.write('<html><head><title>Receipt</title><style>body{font-family:Arial,sans-serif;max-width:500px;margin:20px auto}table{width:100%;border-collapse:collapse}th,td{padding:8px 12px}</style></head><body>'+content+'<scr'+'ipt>window.print()<\/scr'+'ipt></body></html>');w.document.close();}
+function printReceipt(){var content=document.getElementById('mr-body').innerHTML;var w=window.open('','_blank');w.document.write('<html><head><title>Receipt — PrecisionProCare</title><style>body{font-family:Arial,sans-serif;max-width:500px;margin:20px auto}table{width:100%;border-collapse:collapse}th,td{padding:8px 12px}</style></head><body>'+content+'<scr'+'ipt>window.print()<\/scr'+'ipt></body></html>');w.document.close();}
 
-// ── SCENTS ────────────────────────────────────────────────────────────────
-function renderScentsPage(el){
-  el.innerHTML='<div class="ph"><div><h1>Scent Catalog</h1><p>JLM Scenting — Hotel & Home</p></div></div><div class="sg" id="sg"></div>';
-  var sg=document.getElementById('sg');
-  SCENTS.forEach(function(s){
-    var sc=document.createElement('div');sc.className='sk';
-    var sMap={'Spring':'background:#EAF3DE;color:#3B6D11','Summer':'background:#FAEEDA;color:#854F0B','Fall':'background:#FAECE7;color:#993C1D','Winter':'background:var(--lt);color:var(--dk)','Year Round':'background:var(--gy);color:#555'};
-    var dots=[0,1,2].map(function(i){return '<span style="width:6px;height:6px;border-radius:50%;background:'+(i<s.int?'var(--tl)':'#e0e0e0')+';display:inline-block;margin-right:2px"></span>';}).join('');
-    var type=s.type==='both'?'<span style="font-size:10px;font-weight:600;background:#EAF3DE;color:#3B6D11;padding:2px 8px;border-radius:20px">Recurring & One-Time</span>':'<span style="font-size:10px;font-weight:600;background:var(--lt);color:var(--dk);padding:2px 8px;border-radius:20px">Recurring only</span>';
-    sc.innerHTML='<div class="sh" style="background:'+s.bg+'"><span style="font-size:38px">'+s.em+'</span><span class="sct">'+s.col+'</span></div>'
-      +'<div class="sb2"><div class="sn">'+s.n+'</div><div class="snt">'+s.notes+'</div><div class="shot">✦ '+s.hotel+'</div><div style="margin-bottom:6px">'+type+'</div>'
-      +'<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;'+sMap[s.sea]+'">'+s.sea+'</span><div>'+dots+'</div></div></div>';
-    sg.appendChild(sc);
-  });
-}
 
 // ── INVENTORY ─────────────────────────────────────────────────────────────
 function renderInventoryPage(el){
@@ -1914,7 +1851,7 @@ function setupModalEvents(){
   // Service modal
   document.getElementById('ms-close').addEventListener('click',function(){document.getElementById('mo-svc').classList.remove('on');});
   document.getElementById('ms-cancel').addEventListener('click',function(){document.getElementById('mo-svc').classList.remove('on');});
-  document.getElementById('ms-save').addEventListener('click',saveSvc);
+  // ms-save is set dynamically by openSvcModal or openCompleteVisitModal — no global listener here
   // Receipt modal
   document.getElementById('mr-close').addEventListener('click',function(){document.getElementById('mo-receipt').classList.remove('on');});
   document.getElementById('mr-cancel').addEventListener('click',function(){document.getElementById('mo-receipt').classList.remove('on');});
