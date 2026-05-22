@@ -1305,6 +1305,7 @@ function openSvcModal(clientId){
 }
 
 function addExtra(item){
+  var p=item.p;var n=item.n;
   if(item.custom){n=prompt('Service name:');if(!n)return;p=parseFloat(prompt('Price ($):')||0);}
   currentExtras.push({n:n,p:p});
   renderExtras();
