@@ -829,34 +829,75 @@ function openCompleteVisitModal(logId, clientId){
     '<div style="background:var(--lt);border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:13px">'
     +'<strong>'+c.name+'</strong> · '+c.plan+' · $'+c.rate+'/mo<br>'
     +'<span style="color:#888">Visit: '+log.date+' @ '+(log.time||'09:00')+'</span>'
-    +(isFirst?'<br><span style="color:var(--tl);font-weight:600">✓ First visit — '+(isREplan?'$199 all-in (setup+monthly)':'$175 setup included')+'</span>':'')
+    +(isFirst?'<br><span style="color:var(--tl);font-weight:600">✓ First visit — '+(isREplan?'Cleaning + $'+RE_MONTHLY+'/mo':' $175 setup included')+'</span>':'')
     +'</div>'
+    // ── CHECKLIST ──
+    +'<div style="margin-bottom:1rem">'
+    +'<div class="st">☑️ Work Checklist</div>'
+    +'<div style="display:flex;flex-direction:column;gap:8px">'
+    +'<label style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8fafc;border-radius:8px;cursor:pointer;font-size:14px"><input type="checkbox" id="chk-ducts" checked style="width:18px;height:18px"> Duct cleaning & sanitization</label>'
+    +'<label style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8fafc;border-radius:8px;cursor:pointer;font-size:14px"><input type="checkbox" id="chk-filter" checked style="width:18px;height:18px"> Filter change ('+(c.f1q||1)+'x '+ft+(c.f2q>0?' + '+c.f2q+'x':'')+') </label>'
+    +'<label style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8fafc;border-radius:8px;cursor:pointer;font-size:14px"><input type="checkbox" id="chk-scent" checked style="width:18px;height:18px"> Diffuser refill — '+(c.scent||'fragrance')+'</label>'
+    +(c.plan==='Luxury Air'?'<label style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8fafc;border-radius:8px;cursor:pointer;font-size:14px"><input type="checkbox" id="chk-benef" checked style="width:18px;height:18px"> Benefect Decon 30 sanitization</label>':'<input type="hidden" id="chk-benef" value="">')
+    +'</div></div>'
+    // ── EXTRAS ──
+    +'<div style="margin-bottom:1rem"><div class="st">➕ Extra Services</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px" id="extras-btns"></div>'
+    +'<div id="extras-list"><div style="font-size:12px;color:#888;padding:6px 0">No extras added</div></div>'
+    +'<div style="display:flex;justify-content:space-between;font-weight:700;color:var(--er);font-size:14px;padding-top:8px;border-top:1px solid #f0f0f0"><span>Extras Total:</span><span id="extras-total">$0</span></div>'
+    +'</div>'
+    // ── VENTS ──
+    +'<div style="margin-bottom:1rem"><div class="st">🌀 Vents</div>'
+    +'<div style="display:flex;gap:12px;align-items:center">'
+    +'<div style="flex:1"><label style="font-size:12px;color:#888">Total Vents</label><input type="number" id="sv-vents" value="'+(c.vents||10)+'" min="1" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px"></div>'
+    +'<div style="flex:1"><label style="font-size:12px;color:#888">Extra Vents (charged month 2)</label><input type="number" id="sv-ev" readonly value="0" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;background:#f9f9f9;color:var(--tl);font-weight:600"></div>'
+    +'</div><div style="font-size:11px;color:#888;margin-top:4px" id="sv-ev-hint">Included: '+(INC_V[c.plan]||10)+' vents · $'+(B2B_EXTRA_VENT[c.plan]||25)+'/extra</div>'
+    +'</div>'
+    // ── PHOTOS ──
+    +'<div style="margin-bottom:1rem"><div class="st">📷 Photos</div>'
+    +'<div class="pug">'+['Before 1','Before 2','After 1','After 2'].map(function(l){return '<div class="psl"><div style="font-size:20px">📷</div><div style="font-size:11px">'+l+'</div><input type="file" accept="image/*" capture="environment"></div>';}).join('')+'</div>'
+    +'</div>'
+    // ── NOTES & RATING ──
     +'<div class="fg">'
-    +'<div><label>Date</label><input type="date" id="sv-d" value="'+log.date+'"></div>'
-    +'<div><label>Time</label><input type="time" id="sv-t" value="'+(log.time||'09:00')+'"></div>'
+    +'<div><label>Fragrance Used</label><select id="sv-scent-new">'+SCENTS.map(function(s){return '<option value="'+s.n+'"'+(s.n===c.scent?' selected':'')+'>'+s.em+' '+s.n+'</option>';}).join('')+'</select></div>'
     +'<div><label>Technician</label><select id="sv-tech"><option>Juan Vela</option><option>Jose Vela</option></select></div>'
     +'<div><label>Duration (min)</label><input type="number" id="sv-dur" placeholder="90"></div>'
-    +'<div><label>Total Vents</label><input type="number" id="sv-vents" value="'+(c.vents||10)+'" min="1"></div>'
-    +'<div><label>Extra Vents</label><input type="number" id="sv-ev" readonly style="background:#f9f9f9;font-size:12px;color:var(--tl);font-weight:600" value="0"><span style="font-size:10px;color:#888;display:block;margin-top:2px">Included: '+(INC_V[c.plan]||10)+' · $'+(typeof B2B_EXTRA_VENT!=='undefined'&&B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25)+'/ea</span></div>'
-    +'<div><label>Filters Changed</label><select id="sv-f1"><option>Yes</option><option>No</option></select></div>'
-    +'<div><label>Filter Info</label><input readonly style="background:#f9f9f9;font-size:12px" value="'+(c.f1q||1)+'x '+ft+(c.f2q>0?' + '+c.f2q+'x '+c.f2:'')+'"></div>'
-    +'<div><label>Scent Refilled</label><select id="sv-sc"><option>Yes</option><option>No</option></select></div>'
-    +'<div><label>Benefect Applied</label><select id="sv-b"><option>'+(c.plan==='Luxury Air'?'Yes':'No')+'</option><option>'+(c.plan==='Luxury Air'?'No':'Yes')+'</option></select></div>'
-    +'<div><label>Diffuser Checked</label><select id="sv-dif"><option>Yes</option><option>No</option></select></div>'
     +'<div><label>Rating</label><select id="sv-r"><option value="5">⭐⭐⭐⭐⭐</option><option value="4">⭐⭐⭐⭐</option><option value="3">⭐⭐⭐</option><option value="2">⭐⭐</option><option value="1">⭐</option></select></div>'
-    +'<div class="ff"><label>Fragrance This Visit</label><select id="sv-scent-new">'+SCENTS.map(function(s){return '<option value="'+s.n+'"'+(s.n===c.scent?' selected':'')+'>'+s.em+' '+s.n+'</option>';}).join('')+'</select></div>'
-    +'<div class="ff"><label>Notes</label><textarea id="sv-n" rows="2" placeholder="Notes..."></textarea></div>'
-    +'</div>'
-    +'<div style="margin-top:1rem"><div class="st">📷 Photos</div>'
-    +'<div class="pug">'+['Before 1','Before 2','After 1','After 2'].map(function(l,i){return '<div class="psl"><div style="font-size:20px">📷</div><div>'+l+'</div><input type="file" accept="image/*" capture="environment"></div>';}).join('')+'</div></div>'
-    +'<div style="margin-top:1rem"><div class="st">💰 Extra Charges</div>'
-    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px" id="extras-btns"></div>'
-    +'<div id="extras-list"><div style="font-size:12px;color:#888">No extras added</div></div>'
-    +'<div style="display:flex;justify-content:space-between;font-weight:700;color:var(--tl);font-size:15px;padding-top:8px;border-top:1px solid #f0f0f0"><span>Extras Total:</span><span id="extras-total">$0</span></div>'
+    +'<div class="ff"><label>Notes</label><textarea id="sv-n" rows="2" placeholder="Any observations..."></textarea></div>'
     +'</div>';
-  // Build extras buttons
+  // Pre-load extras already scheduled in the log
+  if(log.extras&&log.extras.length>0){
+    currentExtras=log.extras.slice();
+    renderExtras();
+  }
+  // Build extras buttons — show scheduled ones as checked in checklist
   var eb=document.getElementById('extras-btns');
-  if(eb){EXTRAS_MENU.forEach(function(item){var b=document.createElement('button');b.className='btn bo bs';b.style.fontSize='11px';b.textContent=item.n+(item.custom?'':'  $'+item.p);b.addEventListener('click',function(){addExtra(item);});eb.appendChild(b);});}
+  if(eb){
+    // First show scheduled extras as checklist items
+    if(log.extras&&log.extras.length){
+      log.extras.forEach(function(e){
+        var lbl=document.createElement('label');
+        lbl.style.cssText='display:flex;align-items:center;gap:10px;padding:10px;background:#FFF8F0;border-radius:8px;cursor:pointer;font-size:14px;border:1px solid #FAD7A0';
+        lbl.innerHTML='<input type="checkbox" checked style="width:18px;height:18px"> '+e.n+' <strong>$'+e.p+'</strong>';
+        lbl.querySelector('input').addEventListener('change',function(){
+          if(!this.checked){currentExtras=currentExtras.filter(function(x){return x.n!==e.n;});renderExtras();}
+          else{if(!currentExtras.find(function(x){return x.n===e.n;}))currentExtras.push(e);renderExtras();}
+        });
+        eb.appendChild(lbl);
+      });
+    }
+    // Then add buttons for additional extras
+    var addDiv=document.createElement('div');
+    addDiv.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-top:8px';
+    EXTRAS_MENU.forEach(function(item){
+      if(log.extras&&log.extras.find(function(e){return e.n===item.n;}))return; // already scheduled
+      var b=document.createElement('button');b.className='btn bo bs';b.style.fontSize='11px';
+      b.textContent='+ '+item.n+(item.custom?'':' $'+item.p);
+      b.addEventListener('click',function(){addExtra(item);});
+      addDiv.appendChild(b);
+    });
+    eb.appendChild(addDiv);
+  }
   // Vents auto-calc
   var svVentsEl2=document.getElementById('sv-vents');
   function updateSvVents2(){
@@ -869,10 +910,8 @@ function openCompleteVisitModal(logId, clientId){
   if(svVentsEl2){svVentsEl2.addEventListener('input',updateSvVents2);updateSvVents2();}
   // Override save button to complete THIS scheduled visit
   document.getElementById('ms-save').onclick=function(){
-    // ONLY updates the existing scheduled log — never creates new
-    var li2=logs.findIndex(function(l){return l.id===logId;});
-    if(li2<0){toast('Error: log not found');return;}
     var g=function(id){var el=document.getElementById(id);return el?el.value:'';};
+    var chk=function(id){var el=document.getElementById(id);return el&&el.type==='checkbox'?el.checked:false;};
     var extTotal2=currentExtras.reduce(function(s,e){return s+e.p;},0);
     var svV2=parseInt(g('sv-vents'))||c.vents||10;
     var svEv2=parseInt(g('sv-ev'))||0;
@@ -886,31 +925,35 @@ function openCompleteVisitModal(logId, clientId){
     var newScent2=g('sv-scent-new')||c.scent||'';
     if(newScent2&&ci2>=0)clients[ci2].scent=newScent2;
     // Extra vents: pending on first visit
-    var evPending=isFirst&&svEv2>0;
+    var evPending2=isFirst&&svEv2>0;
     var evPrice2=B2B_EXTRA_VENT[c.plan]!==undefined?B2B_EXTRA_VENT[c.plan]:25;
+    var chk=function(id){var el=document.getElementById(id);return el&&el.type==='checkbox'?el.checked:false;};
     var li2=logs.findIndex(function(l){return l.id===logId;});
-    if(li2>=0){
-      logs[li2].status='Completed';
-      logs[li2].date=g('sv-d');logs[li2].time=g('sv-t');logs[li2].tech=g('sv-tech');
-      logs[li2].dur=g('sv-dur');logs[li2].f1=g('sv-f1');logs[li2].scent=g('sv-sc');
-      logs[li2].benef=g('sv-b');logs[li2].diff=g('sv-dif');logs[li2].rating=parseInt(g('sv-r'))||5;
-      logs[li2].notes=g('sv-n');logs[li2].vents=svV2;logs[li2].extraVents=svEv2;
-      logs[li2].extras=currentExtras.slice();logs[li2].extTotal=extTotal2;
-      logs[li2].setup=b2bSetup2;logs[li2].total=total2;
-      logs[li2].clientScent=newScent2;
-      logs[li2].isFirstSvc=isFirst;
-      logs[li2].baseRate=baseRate2;
-      logs[li2].evPending=evPending;
-      logs[li2].evPrice=evPrice2;
-      logs[li2].evCount=svEv2;
-    }
-    // Update client next visit to next scheduled date
-    var nextSch=logs.filter(function(l){return l.clientId===clientId&&l.status==='Scheduled'&&l.date>g('sv-d');}).sort(function(a,b){return a.date.localeCompare(b.date);})[0];
+    if(li2<0){toast('❌ Error: visit not found');return;}
+    logs[li2].status='Completed';
+    logs[li2].date=log.date;logs[li2].time=log.time;
+    logs[li2].tech=g('sv-tech');logs[li2].dur=g('sv-dur');
+    logs[li2].ducts=chk('chk-ducts')?'Yes':'No';
+    logs[li2].f1=chk('chk-filter')?'Yes':'No';
+    logs[li2].scent=chk('chk-scent')?'Yes':'No';
+    logs[li2].benef=chk('chk-benef')?'Yes':'No';
+    logs[li2].diff='Yes';logs[li2].rating=parseInt(g('sv-r'))||5;
+    logs[li2].notes=g('sv-n');logs[li2].vents=svV2;logs[li2].extraVents=svEv2;
+    logs[li2].extras=currentExtras.slice();logs[li2].extTotal=extTotal2;
+    logs[li2].setup=b2bSetup2;logs[li2].total=total2;
+    logs[li2].clientScent=newScent2;
+    logs[li2].isFirstSvc=isFirst;
+    logs[li2].baseRate=baseRate2;
+    logs[li2].evPending=evPending2;
+    logs[li2].evPrice=evPrice2;
+    logs[li2].evCount=svEv2;
+    // Update client next visit
+    var nextSch=logs.filter(function(l){return l.clientId===clientId&&l.status==='Scheduled'&&l.date>log.date;}).sort(function(a,b){return a.date.localeCompare(b.date);})[0];
     if(ci2>=0&&nextSch)clients[ci2].next=nextSch.date;
     // Inventory deductions
-    if(g('sv-f1')==='Yes'){var ft3=FT[c.plan]||'MERV 11';var fIdx=INV.findIndex(function(i){return i.n.includes(ft3);});if(fIdx>=0)INV[fIdx].stock=Math.max(0,INV[fIdx].stock-((c.f1q||1)+(c.f2q||0)));}
-    if(g('sv-sc')==='Yes'){var sIdx=INV.findIndex(function(i){return i.cat==='fragrance'&&i.n.includes('500ml');});if(sIdx>=0)INV[sIdx].stock=Math.max(0,INV[sIdx].stock-1);}
-    if(g('sv-b')==='Yes'){var bIdx=INV.findIndex(function(i){return i.n.includes('Benefect');});if(bIdx>=0)INV[bIdx].stock=Math.max(0,INV[bIdx].stock-0.1);}
+    if(chk('chk-filter')){var ft3=FT[c.plan]||'MERV 11';var fIdx=INV.findIndex(function(i){return i.n.includes(ft3);});if(fIdx>=0)INV[fIdx].stock=Math.max(0,INV[fIdx].stock-((c.f1q||1)+(c.f2q||0)));}
+    if(chk('chk-scent')){var sIdx=INV.findIndex(function(i){return i.cat==='fragrance'&&i.n.includes('500ml');});if(sIdx>=0)INV[sIdx].stock=Math.max(0,INV[sIdx].stock-1);}
+    if(chk('chk-benef')){var bIdx=INV.findIndex(function(i){return i.n.includes('Benefect');});if(bIdx>=0)INV[bIdx].stock=Math.max(0,INV[bIdx].stock-0.1);}
     save();
     document.getElementById('mo-svc').classList.remove('on');
     toast('✅ Visit completed!');
@@ -970,7 +1013,7 @@ function renderLogByDate(el){
         var card=document.createElement('div');
         card.style.cssText='background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 4px rgba(31,58,95,.07);display:flex;justify-content:space-between;align-items:center;gap:10px;border-left:4px solid '+tagColor;
         card.innerHTML='<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--dk)">'+log.clientName+' <span style="font-size:11px;color:#888;font-weight:400">'+log.clientId+'</span></div>'
-          +'<div style="font-size:12px;color:#888;margin-top:2px">'+log.plan+' | '+(log.time||'09:00')+(log.tech?' | '+log.tech:'')+'</div>'
+          +'<div style="font-size:12px;color:#888;margin-top:2px">'+log.plan+' | '+(log.time||'09:00')+(log.tech?' | '+log.tech:'')+(log.clientScent?' | 🌿 '+log.clientScent:'')+'</div>'
           +(isScheduled?'':'<div style="font-size:12px;color:var(--ok);margin-top:2px">$'+logDisplayAmt(log)+'</div>')+'</div>'
           +'<div style="display:flex;gap:6px;flex-wrap:wrap" id="dlb-'+log.id+'"></div>';
         var btnDiv=card.querySelector('#dlb-'+log.id);
@@ -1057,45 +1100,41 @@ function renderLogItems(){if(typeof currentPage!=='undefined'&&currentPage==='se
 function openEditSvcModal(logId){
   var log=logs.find(function(l){return l.id===logId;});if(!log)return;
   var c=clients.find(function(x){return x.id===log.clientId;});if(!c)return;
-  var scentOpts=SCENTS.map(function(s){return '<option value="'+s.n+'"'+(s.n===log.clientScent?' selected':'')+'>'+s.em+' '+s.n+'</option>';}).join('');
-  var sel=function(id,opts,cur){return '<select id="'+id+'">'+opts.map(function(o){return '<option'+(o===cur?' selected':'')+'>'+o+'</option>';}).join('')+'</select>';};
+  var isScheduled=log.status==='Scheduled';
+  currentExtras=(log.extras||[]).slice();
   document.getElementById('ms-body').innerHTML=
-    '<div style="background:var(--lt);border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:13px"><strong>'+c.name+'</strong> · '+c.plan+' · Editing visit from '+log.date+'</div>'
+    '<div style="background:var(--lt);border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:13px">'
+    +'<strong>'+c.name+'</strong> · '+c.plan+' · '+(isScheduled?'📅 Scheduled: '+log.date:'✅ Completed: '+log.date)+'</div>'
     +'<div class="fg">'
     +'<div><label>Date</label><input type="date" id="sv-d" value="'+log.date+'"></div>'
     +'<div><label>Time</label><input type="time" id="sv-t" value="'+log.time+'"></div>'
-    +'<div><label>Technician</label>'+sel('sv-tech',['Juan Vela','Jose Vela'],log.tech)+'</div>'
-    +'<div><label>Status</label>'+sel('sv-s',['Completed','Pending','Cancelled','Rescheduled'],log.status)+'</div>'
-    +'<div><label>Duration (min)</label><input type="number" id="sv-dur" value="'+(log.dur||'')+'"></div>'
-    +'<div><label>Filters Changed</label>'+sel('sv-f1',['Yes','No'],log.f1)+'</div>'
-    +'<div><label>Scent Refilled</label>'+sel('sv-sc',['Yes','No'],log.scent)+'</div>'
-    +'<div><label>Benefect Applied</label>'+sel('sv-b',['Yes','No'],log.benef)+'</div>'
-    +'<div><label>Diffuser Checked</label>'+sel('sv-dif',['Yes','No'],log.diff)+'</div>'
-    +'<div><label>Rating</label>'+sel('sv-r',['5','4','3','2','1'],String(log.rating))+'</div>'
-    +'<div class="ff"><label>Fragrance Used</label><select id="sv-scent-sel">'+scentOpts+'</select></div>'
-    +'<div class="ff"><label>Notes</label><textarea id="sv-n" rows="2">'+( log.notes||'')+'</textarea></div>'
+    +'<div><label>Technician</label><select id="sv-tech"><option'+(log.tech==='Juan Vela'?' selected':'')+'>Juan Vela</option><option'+(log.tech==='Jose Vela'?' selected':'')+'>Jose Vela</option></select></div>'
+    +'<div class="ff"><label>🌿 Fragrance for this visit</label><select id="sv-scent-edit">'+SCENTS.map(function(s){return '<option value="'+s.n+'"'+((log.clientScent||c.scent)===s.n?' selected':'')+'>'+s.em+' '+s.n+'</option>';}).join('')+'</select></div>'
+    +'<div class="ff"><label>Notes</label><textarea id="sv-n" rows="2">'+(log.notes||'')+'</textarea></div>'
+    +'</div>'
+    +'<div style="margin-top:1rem"><div class="st">➕ '+(isScheduled?'Schedule Extras (shown pre-checked in Route)':'Extra Services')+'</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px" id="extras-btns2"></div>'
+    +'<div id="extras-list"><div style="font-size:12px;color:#888">No extras</div></div>'
+    +'<div style="display:flex;justify-content:space-between;font-weight:700;color:var(--er);font-size:14px;padding-top:8px;border-top:1px solid #f0f0f0"><span>Extras:</span><span id="extras-total">$0</span></div>'
     +'</div>';
+  // Extras buttons
+  var eb2=document.getElementById('extras-btns2');
+  if(eb2){EXTRAS_MENU.forEach(function(item){var b=document.createElement('button');b.className='btn bo bs';b.style.fontSize='11px';b.textContent='+ '+item.n+(item.custom?'':' $'+item.p);b.addEventListener('click',function(){addExtra(item);});eb2.appendChild(b);});}
+  renderExtras();
   document.getElementById('ms-save').onclick=function(){
     var li=logs.findIndex(function(l){return l.id===logId;});
     if(li<0)return;
     logs[li].date=document.getElementById('sv-d').value;
     logs[li].time=document.getElementById('sv-t').value;
     logs[li].tech=document.getElementById('sv-tech').value;
-    logs[li].status=document.getElementById('sv-s').value;
-    logs[li].dur=document.getElementById('sv-dur').value;
-    logs[li].f1=document.getElementById('sv-f1').value;
-    logs[li].scent=document.getElementById('sv-sc').value;
-    logs[li].benef=document.getElementById('sv-b').value;
-    logs[li].diff=document.getElementById('sv-dif').value;
-    logs[li].rating=parseInt(document.getElementById('sv-r').value)||5;
-    logs[li].clientScent=document.getElementById('sv-scent-sel').value;
     logs[li].notes=document.getElementById('sv-n').value;
-    // Update client scent if changed
-    var ci=clients.findIndex(function(x){return x.id===log.clientId;});
-    if(ci>=0)clients[ci].scent=logs[li].clientScent;
+    logs[li].extras=currentExtras.slice();
+    logs[li].extTotal=currentExtras.reduce(function(s,e){return s+e.p;},0);
+    var newScent=document.getElementById('sv-scent-edit')?document.getElementById('sv-scent-edit').value:'';
+    if(newScent){logs[li].clientScent=newScent;var ci2=clients.findIndex(function(x){return x.id===log.clientId;});if(ci2>=0)clients[ci2].scent=newScent;}
     save();
     document.getElementById('mo-svc').classList.remove('on');
-    renderLogItems();
+    if(currentPage==='servicelog')renderPage();
     toast('✅ Visit updated!');
   };
   document.getElementById('mo-svc').classList.add('on');
@@ -1696,7 +1735,12 @@ function buildPortal(id){
     (log.extras||[]).forEach(function(e){items+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span style="color:#444">+ '+e.n+'</span><span style="font-weight:600;color:var(--er)">$'+e.p+'</span></div>';});
     items+='<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+log.total+'</span></div>';
     // Work performed
-    var done=[log.f1==='Yes'?'✅ Filters changed':'',log.scent==='Yes'?'✅ Scent refilled':'',log.benef==='Yes'?'✅ Benefect applied':''].filter(Boolean);
+    var done=[
+      log.ducts==='Yes'?'✅ Duct cleaning & sanitization':'',
+      log.f1==='Yes'?'✅ Filters changed':'',
+      log.scent==='Yes'?'✅ Scent refilled':'',
+      log.benef==='Yes'?'✅ Benefect applied':''
+    ].filter(Boolean);
     return '<div class="pvc" style="border-left:4px solid '+borderColor+'">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
       +'<div><div style="font-weight:700;color:var(--dk);font-size:15px">'+ds+'</div>'
