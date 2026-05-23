@@ -350,7 +350,9 @@ function buildClientsTable(data){
       bStatus.addEventListener('click',function(){toggleClientStatus(id);});
       bDel.addEventListener('click',function(){deleteClient(id);});
     })(c.id);
-    div.appendChild(bEdit);div.appendChild(bStatus);div.appendChild(bDel);
+    var bLink=document.createElement('button');bLink.className='btn bs';bLink.style.cssText='padding:6px 12px;font-size:12px;background:#EEF2FF;color:#3730A3;border:1px solid #C7D2FE;border-radius:8px;cursor:pointer';bLink.textContent='🔗 Portal Link';
+    (function(cid){bLink.addEventListener('click',function(){var link=window.location.origin+window.location.pathname+'?client='+cid;navigator.clipboard.writeText(link).then(function(){toast('✅ Link copied! Paste in SMS to client.');}).catch(function(){prompt('Copy this link:',link);});});;})(c.id);
+    div.appendChild(bLink);div.appendChild(bEdit);div.appendChild(bStatus);div.appendChild(bDel);
     actionTd.appendChild(div);tr.appendChild(actionTd);tb.appendChild(tr);
   });
 }
@@ -1997,11 +1999,88 @@ function setupModalEvents(){
   document.getElementById('mr-print').addEventListener('click',printReceipt);
 }
 
+// ── CLIENT PORTAL PUBLIC MODE ─────────────────────────────────────────────
+function checkPublicPortal(){
+  var params=new URLSearchParams(window.location.search);
+  var cid=params.get('client');
+  if(!cid)return false;
+  var c=clients.find(function(x){return x.id===cid;});
+  if(!c){document.body.innerHTML='<div style="font-family:DM Sans,sans-serif;text-align:center;padding:3rem;color:#888"><div style="font-size:44px;margin-bottom:1rem">404</div><h2>Portal not found</h2><p style="margin-top:.5rem;font-size:14px">Please contact PrecisionProCare at (919) 398-0003</p></div>';return true;}
+  document.querySelector('nav').style.display='none';
+  var main=document.querySelector('.main');
+  var header=document.createElement('div');
+  header.style.cssText='background:linear-gradient(135deg,#1F3A5F,#2E6DA4);padding:16px 20px;display:flex;align-items:center;gap:12px';
+  header.innerHTML='<div style="width:38px;height:38px;background:rgba(255,255,255,.2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:Playfair Display,serif;font-weight:700;color:#fff;font-size:15px">PP</div>'
+    +'<div><div style="font-family:Playfair Display,serif;font-size:17px;font-weight:600;color:#fff">Precision<span style="color:#C9A84C">ProCare</span></div>'
+    +'<div style="font-size:11px;color:rgba(255,255,255,.7)">Client Portal</div></div>';
+  document.body.insertBefore(header,document.body.firstChild);
+  main.style.maxWidth='700px';
+  var pg=document.createElement('div');
+  pg.className='pg on';
+  main.innerHTML='';
+  main.appendChild(pg);
+  buildPortalPublic(cid,pg);
+  return true;
+}
+
+function buildPortalPublic(id,el){
+  var c=clients.find(function(x){return x.id===id;});if(!c||!el)return;
+  var ft=FT[c.plan]||'MERV 11';var cl=CLNS[c.plan]||1;
+  var ini=c.name.split(' ').map(function(w){return w[0];}).join('').slice(0,2).toUpperCase();
+  var cLogs=logs.filter(function(l){return l.clientId===id&&l.status!=='Scheduled';}).sort(function(a,b){return b.date.localeCompare(a.date);});
+  var html='<div class="ph2"><div class="pav">'+ini+'</div><div><h2 style="font-family:Playfair Display,serif;font-size:22px">'+c.name+'</h2><p style="font-size:13px;opacity:.8">'+c.addr+'</p><span class="ppb">✦ '+c.plan+' Plan</span></div></div>'
+  +'<div class="nvc"><div style="width:46px;height:46px;background:rgba(255,255,255,.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📅</div>'
+  +'<div><h3 style="font-size:13px;opacity:.85;margin-bottom:4px">Next visit</h3><p style="font-size:18px;font-weight:600">'+(c.next||'TBD')+(c.time?' at '+c.time:'')+'</p></div></div>'
+  +'<div class="card" style="margin-bottom:1.5rem"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tl);margin-bottom:1rem">Your Plan Summary</div>'
+  +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;text-align:center"><div><div style="font-size:22px;font-weight:700;color:var(--dk)">1</div><div style="font-size:11px;color:#888">Visit/month</div></div><div><div style="font-size:22px;font-weight:700;color:var(--dk)">2</div><div style="font-size:11px;color:#888">'+ft+' filters</div></div><div><div style="font-size:22px;font-weight:700;color:var(--dk)">'+cl+'\xd7</div><div style="font-size:11px;color:#888">Cleanings/year</div></div></div>'
+  +'<div style="border-top:1px solid #f0f0f0;margin-top:12px;padding-top:12px;display:flex;align-items:center;gap:10px;font-size:13px;color:#444"><span style="font-size:20px">\uD83C\uDF3F</span><span>Current scent: <strong>'+(c.scent||'\u2014')+'</strong></span></div></div>'
+  +'<h3 style="font-family:Playfair Display,serif;font-size:18px;color:var(--dk);margin:0 0 1rem">Service History</h3>'
+  +(!cLogs.length?'<div class="card"><div class="es"><div class="ei">\uD83D\uDCCB</div><h3>No visits yet</h3><p style="font-size:13px;margin-top:.5rem">Your service history will appear here after your first visit.</p></div></div>'
+  :cLogs.map(function(log){
+    if(!log.total&&log.total!==0)return '';
+    var d=new Date(log.date+'T12:00:00');
+    var ds=d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+    var isEval=log.visitType==='evaluation';
+    var borderColor=isEval?'#94a3b8':(c.plan==='Luxury Air'?'var(--gd)':c.plan==='Pure Living'?'var(--tl)':'var(--md)');
+    var label=isEval?'Contract & Plan Activation':(log.isFirstSvc?'First Service \u2014 '+c.plan:'Monthly Service \u2014 '+c.plan);
+    var items='<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span style="color:#444">'+label+'</span><span style="font-weight:600">$'+log.baseRate+'</span></div>';
+    if(log.setup>0)items+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span style="color:#444">Contract & Plan Activation</span><span style="font-weight:600">$'+log.setup+'</span></div>';
+    if(log.evCharged&&log.evCount>0)items+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span style="color:#444">Extra vents ('+log.evCount+'\xd7$'+log.evPrice+')</span><span style="font-weight:600;color:var(--gd)">$'+(log.evCount*log.evPrice)+'</span></div>';
+    (log.extras||[]).forEach(function(e){items+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f5f5f5"><span style="color:#444">+ '+e.n+'</span><span style="font-weight:600;color:var(--er)">$'+e.p+'</span></div>';});
+    items+='<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;color:var(--tl);padding-top:8px"><span>Total</span><span>$'+log.total+'</span></div>';
+    var done=[log.ducts==='Yes'?'\u2705 Duct cleaning & sanitization':'',log.f1==='Yes'?'\u2705 Filters changed':'',log.scent==='Yes'?'\u2705 Scent refilled':'',log.benef==='Yes'?'\u2705 Benefect applied':''].filter(Boolean);
+    return '<div class="pvc" style="border-left:4px solid '+borderColor+';margin-bottom:12px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+      +'<div><div style="font-weight:700;color:var(--dk);font-size:15px">'+ds+'</div>'
+      +'<div style="font-size:12px;color:#888;margin-top:2px">'+(log.tech||'Juan Vela')+(log.dur?' \xb7 '+log.dur+' min':'')+'</div></div>'
+      +'<div style="text-align:right"><div style="font-size:18px;font-weight:700;color:var(--tl)">$'+log.total+'</div>'
+      +(isEval?'<span style="font-size:10px;background:#e2e8f0;color:#475569;padding:2px 6px;border-radius:8px">CONTRACT</span>':'')+'</div></div>'
+      +(done.length?'<div style="background:var(--tll);border-radius:6px;padding:6px 10px;margin-bottom:8px;font-size:12px;color:var(--tl)">'+done.join(' \xb7 ')+'</div>':'')
+      +'<div style="background:#fafafa;border-radius:8px;padding:10px 12px;border:1px solid #f0f0f0">'+items+'</div>'
+      +(!isEval?'<div style="margin-top:12px;border-top:1px solid #f0f0f0;padding-top:12px">'
+      +(log.paid
+        ?'<div style="background:#EAF3DE;border:1px solid #A3D977;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;color:#3B6D11">\u2705 PAID \u2014 '+(log.paidDate||'')+' \xb7 '+(log.paidMethod||'')+'</div>'
+        :'<div>'
+        +'<div style="background:#FEF9E7;border:1px solid #FAC775;border-radius:8px;padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">'
+        +'<div><div style="font-size:12px;font-weight:700;color:#854F0B">\u23F3 INVOICE \u2014 Payment Pending</div>'
+        +'<div style="font-size:11px;color:#92400E;margin-top:2px">Amount due: <strong>$'+log.total+'</strong></div></div>'
+        +'<div style="font-size:20px">\uD83D\uDCB3</div></div>'
+        +'<a href="'+PAYMENT_LINK+'" target="_blank" style="display:block;width:100%;padding:11px;font-size:13px;background:#1D4ED8;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;text-align:center;text-decoration:none;box-sizing:border-box">\uD83D\uDD17 Pay Online</a>'
+        +'</div>')
+      +'</div>':'')
+      +'</div>';
+  }).join(''))
+  +'<div style="text-align:center;padding:2rem 1rem;font-size:12px;color:#aaa;border-top:1px solid #f0f0f0;margin-top:1.5rem">Questions? Call us at (919) 398-0003 \xb7 service@precisionprocare.com</div>';
+  el.innerHTML=html;
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────────
 load();
-buildNav();
-renderPage();
-setupModalEvents();
+if(!checkPublicPortal()){
+  buildNav();
+  renderPage();
+  setupModalEvents();
+}
 </script>
 </body>
 </html>
