@@ -1025,6 +1025,23 @@ function openCompleteVisitModal(logId, clientId){
   };
   document.getElementById('mo-svc').classList.add('on');
 }
+function renderScentsPage(el){
+  el.innerHTML='<div class="ph"><div><h1>🌿 Scents & Fragrances</h1><p>Hotel & Home collection — JLM Scenting</p></div></div>'
+  +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem">'
+  +SCENTS.map(function(s){
+    var clientsUsing=clients.filter(function(c){return c.scent===s.n&&c.status==='Active';});
+    return '<div class="card" style="border-left:4px solid var(--tl)">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+      +'<div style="font-size:32px">'+s.em+'</div>'
+      +'<span style="background:'+s.bg+';color:var(--dk);font-size:11px;font-weight:600;padding:3px 10px;border-radius:10px">'+s.collection+'</span>'
+      +'</div>'
+      +'<div style="font-size:16px;font-weight:700;color:var(--dk)">'+s.n+'</div>'
+      +'<div style="font-size:12px;color:#888;margin-top:2px">'+s.notes+'</div>'
+      +(clientsUsing.length?'<div style="margin-top:8px;font-size:12px;color:var(--tl);font-weight:600">'+clientsUsing.length+' client'+(clientsUsing.length>1?'s':'')+': '+clientsUsing.map(function(c){return c.name;}).join(', ')+'</div>':'<div style="margin-top:8px;font-size:12px;color:#ccc">No active clients</div>')
+      +'</div>';
+  }).join('')+'</div>';
+}
+
 function renderLogPage(el){
   el.innerHTML='<div class="ph"><div><h1>Service Log</h1><p>Scheduled &amp; completed visits</p></div></div>'
     +'<div style="display:flex;gap:0;margin-bottom:1.5rem;border-bottom:2px solid #e2e8f0">'
