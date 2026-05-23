@@ -157,6 +157,8 @@ var PRICES={
 // Real Estate setup fees by size (first visit = setup + $49 monthly)
 var RE_SETUP={small:250,medium:350,large:450}; // cleanup cost
 var RE_MONTHLY=49; // fixed monthly all sizes
+// PaymentsHub payment link
+var PAYMENT_LINK='https://pymntlink.com/payment-link?token=NDFjODk5ZDgzZTY2OTg3NjRhMTY4YTI0ZDZjODQ1MmE6MjEzNjVlZWU0NDM5MDVkY2RiNWIwMjU1NzNjZDUxMmUwZjcwMDE2YTQ5NTAwYmVlNGNkNWNjYjIyYTg5YzcxYzQ0NDZkYmMwODc3ZDk5NDhlNjUxYjQ5YjVjY2U3MjRjZjc1N2YxMjdmOGNmMTYyZjE3ZGRkYTExMGQ5MzI3ZmY3OWE3NTQ2YmUzYTVhNjI0NjlmMmM2NjVlMmU0OTJlN2NmODUxMDAwMjM5ZmFmMThkNGZhNjc4ZDI1YjlhYWEyOTYyY2UyYjNmZDdkMjI0MWM1MjY3YTVkN2Y4MjcxMWFhOTVmODAyMzg2NGE3ZTcyNjk2MGMzZDcwZjc4MWE3ZThkMjVjYzVjZjQ1MjJlMDhmMTVmNmRlNGRiODNlNDYxODAzNDZmYzBhNWZiNjVmNDk0N2I1YzFjNzFjMWE5NWQzY2NmYWY4YWI5Mjc5MmJjZDU1MTdhMjE0Y2I1NmIwMDkxMzkwOWVmMDA1ZjFkY2EzMzg3NDJkMGU4ZWVkMjA1';
 // Special first-visit prices for B2B
 var B2B_SETUP={'Real Estate':0,'Casa Piloto':0,'Construction 1-10':0,'Construction 11-30':0,'Construction 31-50+':0};
 var B2B_EXTRA_VENT={'Real Estate':15,'Casa Piloto':20,'Construction 1-10':0,'Construction 11-30':0,'Construction 31-50+':0};
@@ -1517,6 +1519,7 @@ function showReceipt(logId, clientId){
     +'<thead><tr style="background:var(--dk)"><th style="padding:8px 12px;text-align:left;color:#fff;font-size:11px">Service</th><th style="padding:8px 12px;text-align:right;color:#fff;font-size:11px">Amount</th></tr></thead>'
     +'<tbody>'+rows+'</tbody></table>'
     +'<div style="text-align:center;font-size:11px;color:var(--tl);margin-top:12px;padding:10px;background:var(--tll);border-radius:8px">'
+    +(log&&log.paid?'<div style="background:#EAF3DE;border-radius:6px;padding:6px;margin-bottom:8px;font-size:13px;font-weight:700;color:#3B6D11">✅ PAID · '+log.paidDate+' · '+log.paidMethod+'</div>':'<div style="background:#FEF9E7;border-radius:6px;padding:6px;margin-bottom:8px;font-size:12px;color:#854F0B">⏳ Payment Pending — Amount due: $'+(log?log.total:'')+'</div>')
     +'✦ Thank you for choosing PrecisionProCare ✦<br>'
     +'<span style="color:#888">Scent: '+(c.scent||'—')+' · Next visit: '+nextDate+(nextTime?' @ '+nextTime:'')+'</span></div>';
 
@@ -1825,13 +1828,43 @@ function buildPortal(id){
       +'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">'
       +['Before 1','Before 2','After 1','After 2'].map(function(l){return '<div style="aspect-ratio:1;background:#f1f5f9;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:18px;color:#94a3b8">📷<div style="font-size:9px;margin-top:2px;color:#94a3b8">'+l+'</div></div>';}).join('')
       +'</div><div style="font-size:10px;color:#94a3b8;text-align:center;margin-top:4px">Photos available once database is connected</div></div>':'')
-      // Buttons row
-      +(!isEval?'<div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">'
-      +'<button onclick="addAdjustment(\''+log.id+'\',\''+id+'\')" style="padding:5px 12px;font-size:11px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer">+ Add Adjustment</button>'
-      +'<button onclick="showReceipt(\''+log.id+'\',\''+id+'\')" style="padding:8px 16px;font-size:12px;background:var(--tl);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">🖨️ Print Receipt</button>'
+      // Payment status & buttons
+      +(!isEval?'<div style="margin-top:12px;border-top:1px solid #f0f0f0;padding-top:12px">'
+      +(log.paid
+        // PAID — show receipt badge
+        ?'<div style="display:flex;justify-content:space-between;align-items:center">'
+        +'<div style="background:#EAF3DE;border:1px solid #A3D977;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;color:#3B6D11">✅ PAID — '+(log.paidDate||'')+' · '+(log.paidMethod||'')+'</div>'
+        +'<div style="display:flex;gap:6px">'
+        +'<button onclick="addAdjustment(\''+log.id+'\',\''+id+'\')" style="padding:5px 12px;font-size:11px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer">+ Adjust</button>'
+        +'<button onclick="showReceipt(\''+log.id+'\',\''+id+'\')" style="padding:8px 14px;font-size:12px;background:var(--tl);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">🖨️ Receipt</button>'
+        +'</div></div>'
+        // UNPAID — show invoice with pay buttons
+        :'<div style="background:#FEF9E7;border:1px solid #FAC775;border-radius:8px;padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">'
+        +'<div><div style="font-size:12px;font-weight:700;color:#854F0B">⏳ INVOICE — Payment Pending</div>'
+        +'<div style="font-size:11px;color:#92400E;margin-top:2px">Amount due: <strong>$'+log.total+'</strong></div></div>'
+        +'<div style="font-size:20px">💳</div></div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+        +'<button onclick="markPaid(\''+log.id+'\',\''+id+'\',\'In Person\')" style="flex:1;padding:10px;font-size:13px;background:#16A34A;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">💳 Pay in Person</button>'
+        +'<a href="'+PAYMENT_LINK+'" target="_blank" style="flex:1;padding:10px;font-size:13px;background:#1D4ED8;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;text-align:center;text-decoration:none;display:block">🔗 Send Payment Link</a>'
+        +'</div>'
+        +'<div style="display:flex;gap:6px;margin-top:8px">'
+        +'<button onclick="addAdjustment(\''+log.id+'\',\''+id+'\')" style="padding:5px 12px;font-size:11px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer">+ Adjust</button>'
+        +'<button onclick="showReceipt(\''+log.id+'\',\''+id+'\')" style="padding:5px 12px;font-size:11px;background:var(--tl);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">🖨️ Print Invoice</button>'
+        +'</div>')
       +'</div>':'')
       +'</div>';
   }).join(''));
+}
+
+function markPaid(logId, clientId, method){
+  var li=logs.findIndex(function(l){return l.id===logId;});
+  if(li<0)return;
+  logs[li].paid=true;
+  logs[li].paidDate=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  logs[li].paidMethod=method||'In Person';
+  save();
+  buildPortal(clientId);
+  toast('✅ Payment recorded — '+method);
 }
 
 function addAdjustment(logId, clientId){
